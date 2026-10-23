@@ -1,6 +1,6 @@
-import type {SceneSpec, SceneType} from '../schema';
+import type {SceneOf, SceneType} from '../schema';
 
-export const EXAMPLES: Record<SceneType, SceneSpec> = {
+export const EXAMPLES: {[T in SceneType]: SceneOf<T>} = {
   title: {
     type: 'title',
     title: 'La Sécu, qui paie quoi ?',

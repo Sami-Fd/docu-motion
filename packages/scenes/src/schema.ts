@@ -26,6 +26,7 @@ export const SceneSpecSchema = z
   });
 export type SceneSpec = z.infer<typeof SceneSpecSchema>;
 export type SceneType = SceneSpec['type'];
+export type SceneOf<T extends SceneType> = Extract<SceneSpec, {type: T}>;
 
 export const SCENE_TYPES: readonly SceneType[] = [
   'title',

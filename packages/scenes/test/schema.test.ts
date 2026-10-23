@@ -35,7 +35,7 @@ describe('scene schemas', () => {
   });
 
   it('rejects a 19-character bar label at bars.0.label', () => {
-    const bars = (EXAMPLES.bars as {bars: {label: string; value: number}[]}).bars;
+    const bars = EXAMPLES.bars.bars;
     const bad = {...EXAMPLES.bars, bars: [{label: 'x'.repeat(19), value: 1}, bars[1]!]};
     const r = SceneSpecSchema.safeParse(bad);
     expect(pathsOf(r)).toContain('bars.0.label');
