@@ -15,7 +15,6 @@ export default defineConfig({
           name: 'visual',
           include: ['packages/core/test/render/**/*.test.ts'],
           exclude: ['**/node_modules/**'],
-          passWithNoTests: true,
         },
       },
     ],
