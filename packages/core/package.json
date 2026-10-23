@@ -3,10 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": {".": "./src/index.ts"},
-  "scripts": {"typecheck": "tsc --noEmit -p ."},
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
   "dependencies": {
     "@docu-motion/scenes": "*",
+    "@remotion/bundler": "4.0.538",
+    "@remotion/renderer": "4.0.538",
     "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/pngjs": "6.0.5",
+    "pngjs": "7.0.0"
   }
 }
