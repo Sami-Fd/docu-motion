@@ -22,7 +22,7 @@ function makeProject(topic = 'Retraites'): Project {
       {
         id: 's1',
         narration: 'Bonjour',
-        spec: {type: 'title', title: 'Hello'},
+        spec: {type: 'title', title: 'Hello', decor: 'none', characters: 0},
         status: 'ok',
         durationFrames: 120,
       },

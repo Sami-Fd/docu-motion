@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {SceneSpecSchema} from '@docu-motion/scenes';
 
 export const PROJECT_VERSION = 1 as const;
 
@@ -47,8 +48,7 @@ export const ProjectSchema = z.object({
     z.object({
       id: z.string(),
       narration: z.string(),
-      // Task 4 replaces this with SceneSpecSchema.
-      spec: z.unknown(),
+      spec: SceneSpecSchema,
       status: z.enum(['ok', 'fallback', 'review']),
       audio: z.object({path: z.string(), seconds: z.number()}).optional(),
       durationFrames: z.number(),
