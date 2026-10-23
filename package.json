@@ -1,0 +1,16 @@
+{
+  "name": "docu-motion",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "vitest run --project unit",
+    "test:visual": "vitest run --project visual",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.57",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  }
+}
