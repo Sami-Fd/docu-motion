@@ -1,4 +1,8 @@
 import {spawn} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+
+// Run npx from the core package so it finds the workspace's local remotion CLI regardless of caller cwd.
+const PACKAGE_DIR = fileURLToPath(new URL('../..', import.meta.url));
 
 export type MediaInfo = {durationSeconds: number; hasAudio: boolean; width: number; height: number};
 
@@ -10,7 +14,7 @@ export function probeMedia(file: string): Promise<MediaInfo> {
   const quote = (s: string) => (win ? `"${s}"` : s);
   const args = ['remotion', 'ffprobe', '-v', 'error', '-show_streams', '-show_format', '-of', 'json', quote(file)];
   return new Promise((resolve, reject) => {
-    const child = spawn('npx', args, {shell: win, windowsHide: true});
+    const child = spawn('npx', args, {shell: win, windowsHide: true, cwd: PACKAGE_DIR});
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => (out += d));
@@ -22,14 +26,17 @@ export function probeMedia(file: string): Promise<MediaInfo> {
         const json = JSON.parse(out) as {streams?: ProbeStream[]; format?: {duration?: string}};
         const streams = json.streams ?? [];
         const video = streams.find((s) => s.codec_type === 'video');
+        const durationSeconds = Number(json.format?.duration);
+        if (!video) throw new Error('no video stream found');
+        if (!Number.isFinite(durationSeconds)) throw new Error('no duration in format info');
         resolve({
-          width: video?.width ?? 0,
-          height: video?.height ?? 0,
+          width: video.width ?? 0,
+          height: video.height ?? 0,
           hasAudio: streams.some((s) => s.codec_type === 'audio'),
-          durationSeconds: Number(json.format?.duration),
+          durationSeconds,
         });
       } catch (e) {
-        reject(new Error(`Could not parse ffprobe output for ${file}: ${(e as Error).message}`));
+        reject(new Error(`Unusable ffprobe output for ${file}: ${(e as Error).message}`));
       }
     });
   });

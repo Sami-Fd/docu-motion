@@ -7,6 +7,7 @@ import {PNG} from 'pngjs';
 import {EXAMPLES, durationFromAudio} from '@docu-motion/scenes';
 import {saveProject, loadProject, type Project} from '../../src/index.js';
 import {renderSceneStill, renderVideo} from '../../src/render/render.js';
+import {invalidateBundle} from '../../src/render/bundle.js';
 import {probeMedia} from '../../src/render/probe.js';
 
 const TONE = fileURLToPath(new URL('../fixtures/tone.mp3', import.meta.url));
@@ -97,5 +98,23 @@ describe('render', () => {
     const ac = new AbortController();
     const run = renderVideo(dir, p, {signal: ac.signal, onProgress: () => ac.abort()});
     await expect(run).rejects.toThrow(/cancel/i);
+  }, 180_000);
+
+  it('re-bundles after invalidateBundle so late audio is picked up', async () => {
+    const dir = await freshDir('invalidate');
+    const p = baseProject();
+    p.scenes[0]!.audio = {path: 'voice/s0.mp3', seconds: 2};
+    p.scenes[0]!.durationFrames = durationFromAudio(2);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await renderSceneStill(dir, p, 0); // bundles while the audio file is still missing
+    } finally {
+      warn.mockRestore();
+    }
+    await fs.mkdir(path.join(dir, 'voice'), {recursive: true});
+    await fs.copyFile(TONE, path.join(dir, 'voice', 's0.mp3'));
+    invalidateBundle(dir);
+    const info = await probeMedia(await renderVideo(dir, p));
+    expect(info.hasAudio).toBe(true);
   }, 180_000);
 });
