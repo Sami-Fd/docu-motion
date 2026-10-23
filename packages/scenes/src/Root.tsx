@@ -5,6 +5,7 @@ import type {FilmInput} from './film/types';
 import {SceneView} from './film/SceneView';
 import {ThemeProvider, getTheme} from './theme';
 import {EXAMPLES, SCENE_TYPES} from './schema';
+import {clampFrames} from './film/pure';
 import {estimateDurationFrames} from './timing';
 
 export type SceneStillInput = FilmInput & {sceneIndex: number};
@@ -24,9 +25,14 @@ const defaultFilm: FilmInput = {
   })),
 };
 
-const SceneStill: React.FC<SceneStillInput> = ({style, scenes, sceneIndex}) => {
+const stillScene = ({scenes, sceneIndex}: {scenes: FilmInput['scenes']; sceneIndex: number}) => {
   const s = scenes[sceneIndex];
-  if (!s) return null;
+  if (!s) throw new Error(`SceneStill: sceneIndex ${sceneIndex} is out of range (${scenes.length} scenes)`);
+  return s;
+};
+
+const SceneStill: React.FC<SceneStillInput> = ({style, scenes, sceneIndex}) => {
+  const s = stillScene({scenes, sceneIndex});
   return (
     <ThemeProvider style={style}>
       <AbsoluteFill style={{backgroundColor: getTheme(style).colors.creme}}>
@@ -36,8 +42,8 @@ const SceneStill: React.FC<SceneStillInput> = ({style, scenes, sceneIndex}) => {
   );
 };
 
-const calculateStillMetadata: CalculateMetadataFunction<SceneStillInput> = async ({props}) => ({
-  durationInFrames: Math.max(1, props.scenes[props.sceneIndex]?.durationFrames ?? 1),
+export const calculateStillMetadata: CalculateMetadataFunction<SceneStillInput> = async ({props}) => ({
+  durationInFrames: clampFrames(stillScene(props).durationFrames),
 });
 
 export const RemotionRoot: React.FC = () => (
