@@ -1,7 +1,7 @@
 # docu-motion — design spec
 
-Date: 2026-10-24
-Status: draft, awaiting review
+Date: 2026-10-24 (revised 2026-10-24: automatic one-click flow replaces the 6-step wizard)
+Status: revision awaiting review
 Origin: the `documentaire-motion-design` Claude skill (https://github.com/Sami-Fd/documentaire-motion-design)
 
 ## 1. Purpose
@@ -12,6 +12,7 @@ An open-source, self-hosted app that turns a topic into a documentary/explainer 
 
 **Success criteria**
 - `git clone && npm install && npm start` (or `docker compose up`) opens a working local web UI.
+- From that UI, a user types a topic, picks a style and clicks one button; a complete MP4 with voice-over comes out with no further input.
 - A user with only an Ollama install, or only a Gemini free-tier key, can produce a complete MP4 without the pipeline breaking on malformed model output.
 - Every figure shown on screen is traceable to a source, or visibly marked unverified.
 - Videos can be produced in any left-to-right language; the UI is in English.
@@ -21,7 +22,10 @@ An open-source, self-hosted app that turns a topic into a documentary/explainer 
 | Topic | Decision |
 |---|---|
 | Distribution | Open-source, self-hosted, user's own keys (MIT) |
-| Interface | Local web UI (browser) |
+| Interface | Local web UI (browser), three screens: home (topic + style → Generate), progress, result |
+| Flow | Fully automatic generation; afterwards the user can regenerate a single scene or edit its narration and re-render (no editor, no timeline) |
+| Provider choice | User setting (any supported provider); asked on first launch with a connection test |
+| CLI | `npm run make` runs the same automatic generator without the web UI |
 | What the LLM produces | Structured scene JSON from a fixed library of scene types (not free-form code) |
 | Languages | Multilingual videos, English UI |
 | Voice | edge-tts (free default), ElevenLabs, OpenAI TTS, uploaded recording, or none |
@@ -47,15 +51,16 @@ docu-motion/
 │  │   ├─ scenes/    scene JSON generation, validation, fallback
 │  │   ├─ voice/     TTS engines, upload splitting, durations
 │  │   ├─ render/    stills, layout check, MP4, thumbnail, ffprobe
-│  │   └─ youtube/   titles, description, chapters
+│  │   ├─ youtube/   titles, description, chapters
+│  │   └─ generate/  the automatic generator: runs the steps in order with checkpoints
 │  ├─ server/   Fastify REST API + SSE progress + job queue
-│  └─ web/      React (Vite) wizard + @remotion/player preview
+│  └─ web/      React (Vite): home, progress and result screens + settings
 ├─ skill/       link/reference to the original SKILL.md
 ├─ Dockerfile
 └─ docker-compose.yml
 ```
 
-**Dependency direction:** `web → server → core → scenes`. `core` never imports from `server` or `web`. A future CLI would be a thin layer over `core`.
+**Dependency direction:** `web → server → core → scenes`. `core` never imports from `server` or `web`. The `make` CLI script is a thin layer over `core/generate`, like the server.
 
 ### 2.1 `packages/scenes`
 
@@ -104,14 +109,16 @@ type Project = {
   sources: {id: string; kind: 'url' | 'file' | 'search'; title: string; uri: string; textPath: string; error?: string}[];
   facts: {id: string; statement: string; value?: string; sourceId?: string; excerpt?: string; verified: boolean}[];
   scenes: {id: string; narration: string; spec: SceneSpec; status: 'ok' | 'fallback' | 'review';
+           factIds: string[]; warnings: string[]; dirty?: boolean;
            audio?: {path: string; seconds: number}; durationFrames: number}[];
+  progress: {done: StepName[]; failed?: {step: StepName; message: string}};
   voice: {engine: 'edge' | 'elevenlabs' | 'openai' | 'upload' | 'none'; voiceId?: string};
   youtube?: {titles: string[]; description: string; chapters: {t: string; label: string}[]; hashtags: string[]};
   thumbnail?: {spec: ThumbnailSpec};
 };
 ```
 
-Each pipeline step is a function `(project, ctx) => Promise<Project>` that writes `project.json` when it finishes. Users may stop, edit by hand, and resume.
+Each pipeline step is a function `(project, ctx) => Promise<Project>` that writes `project.json` when it finishes and adds itself to `progress.done`. Users may stop, edit by hand, and resume. `StepName = 'sources' | 'facts' | 'script' | 'scenes' | 'voice' | 'layout' | 'render' | 'package'`. A scene's `warnings` collects ⚠️ messages shown on the result screen (unverified fact, layout overflow after the automatic retry, TTS failure, fallback). `dirty` marks a scene whose narration was edited since the last render.
 
 ## 3. LLM providers
 
@@ -133,36 +140,93 @@ interface LlmProvider {
 
 **Settings:** keys come from `.env` or from the Settings page, which writes to a local `config.json` in the data directory. Keys are only sent to the matching provider. A "Test connection" button runs a minimal call per configured provider (or `--version` + a trivial prompt for CLIs).
 
-## 4. Pipeline (UI wizard)
+## 4. Automatic generation and screens
 
-Each step can be edited and re-run independently; re-running a step marks downstream steps stale.
+### 4.1 The generator (`core/generate`)
 
-1. **Brief**: topic, language, target length (1–10 min), style, tone/audience, provider + model, sources (URLs, PDF/TXT/MD uploads, pasted text), web search mode.
-2. **Research → fact sheet**:
-   - Fetch URLs (readability extraction) and parse PDFs to text into `sources/`.
-   - Web search: `native` uses the provider's built-in search tool when `capabilities.nativeWebSearch`; `tavily` / `brave` use their APIs with a user key. Results become `kind: 'search'` sources.
-   - LLM extracts facts with `sourceId` + verbatim `excerpt`. The app checks that each excerpt really appears in the source text; if not, `verified: false`.
-   - With no sources and no search, the LLM may propose facts from its own knowledge, all with `verified: false`.
-   - UI: list of facts with excerpt, source link, ⚠️ on unverified; user can edit, delete, mark verified.
-3. **Outline + narration**: 8–12 scenes (scaled to target length), one idea per scene, 25–45 words, written for speech in the target language, rounded numbers, no scene titles in the spoken text. Only facts from the fact sheet may be used; the prompt passes them by id, and the response lists the fact ids used per scene.
-4. **Scenes**: per scene, the LLM picks a scene type and fills its schema, including cues. UI shows the live `@remotion/player` preview beside an auto-generated form for the scene's schema; user can edit fields, change type, or regenerate one scene. Each data scene shows its source line on screen (`Source: …`) from the fact's source.
-5. **Voice**:
-   - `edge`: edge-tts through a Node implementation (`msedge-tts` or equivalent), voice list filtered by language.
-   - `elevenlabs`, `openai`: their TTS APIs, per scene.
-   - `upload`: one recording; `prepare` exports the narration joined with pause markers (`<break time="2.0s" />` for ElevenLabs), then the app splits on long silences (ffmpeg `silencedetect`, same logic as `decouper_voix.py`). If the pause count doesn't match the scene count, the UI shows the waveform with detected cuts for manual adjustment.
-   - `none`: subtitles only, durations estimated from word count.
-   - Scene duration = audio length + 1.2 s (or estimate). The preview updates.
-6. **Export**:
-   - **Layout check**: render a still at ~80% of each scene; in the browser preview, measure SVG text/element bounding boxes against the safe area (y 260–880, inside the frame) and detect overlaps between text boxes. Problems are listed per scene with a link to edit it.
-   - **Render** MP4 1920×1080 via `@remotion/renderer` with progress over SSE; cancellable.
-   - **Verify** with ffprobe (Remotion's bundled binary): audio stream present, duration matches.
-   - **Thumbnail**: LLM proposes 3 `ThumbnailSpec`s (2–4 huge words, a shocking figure or question, 1–2 characters, a strong graphic element); rendered as 1280×720 stills; user picks one; PNG under 2 MB.
-   - **YouTube package**: 3 titles under 70 characters, description (2–3 sentence hook, chapters from real scene durations starting at `0:00`, sources list, 3–5 hashtags), narration `.txt`.
+`generate(projectDir, ctx)` runs the steps below in order. Each step is a checkpoint: it saves `project.json` and records itself in `progress.done`, so a retry resumes at the failed step. `ctx` carries the provider, settings, an `onProgress(step, ratio, logLine)` callback and an `AbortSignal`. No step asks the user anything.
+
+1. **sources**:
+   - User links are fetched (readability extraction), and PDF/TXT/MD files are parsed to text into `sources/`.
+   - With no user sources, web search runs automatically:
+     - The provider's built-in search is used when `capabilities.nativeWebSearch`.
+     - Otherwise Tavily or Brave is used when a key is set in Settings.
+     - Otherwise the step is skipped.
+   - Results become `kind: 'search'` sources.
+2. **facts**:
+   - The LLM extracts facts, each with a `sourceId` and a verbatim `excerpt`.
+   - The app checks that each excerpt really appears in the source text; if not, `verified: false`.
+   - With no source text at all, the LLM proposes facts from its own knowledge, all `verified: false`, and generation continues.
+3. **script**:
+   - 8–12 scenes, scaled to the target length, with one idea per scene.
+   - 25–45 words per scene, written for speech in the target language, with rounded numbers and no scene titles in the spoken text.
+   - Only facts from the fact sheet may be used. The prompt passes them by id, and the response lists `factIds` per scene.
+4. **scenes**: per scene, the LLM picks one of the 9 types and fills its schema, including cues. The schema limits are enforced through the validation loop (§3). Each data scene shows its source line (`Source: …`) from the fact's source.
+5. **voice**:
+   - Voice engines:
+     - `edge` (default, free): edge-tts through a Node implementation (`msedge-tts` or equivalent), with the voice picked by language.
+     - `elevenlabs`, `openai`: their TTS APIs, per scene.
+     - `none`: subtitles only, with durations estimated from word count.
+   - Scene duration is the audio length + 1.2 s, or the estimate.
+   - The step calls `invalidateBundle` after writing audio.
+6. **layout**:
+   - Renders a still at ~80% of each scene and measures text and element bounding boxes against the safe area (y 260–880, inside the frame), including overlaps between text boxes.
+   - A scene that overflows is regenerated once automatically (step 4 for that scene, with the problem in the prompt).
+   - If it still overflows, it gets a warning and generation continues.
+7. **render**: MP4 1920×1080 via `@remotion/renderer`, then verified with ffprobe (duration matches; audio present when a voice engine is on).
+8. **package**:
+   - **Thumbnail:** the LLM proposes 3 `ThumbnailSpec`s (2–4 huge words, a shocking figure or question, 1–2 characters, a strong graphic element). They are rendered as 1280×720 stills (PNG under 2 MB), and the first is the default.
+   - **YouTube package:** 3 titles under 70 characters, and a description with a 2–3 sentence hook, chapters from real scene durations starting at `0:00`, the sources list and 3–5 hashtags.
+   - **Narration:** a `.txt` file.
+
+Transient provider errors (timeout, rate limit, 5xx) are retried twice with backoff before a step fails.
+
+**Touch-up operations** (also in `core/generate`, used by the result screen):
+- `regenerateScene(id)`: re-runs step 4 for one scene, then layout for that scene. The narration is unchanged; the type and data may change.
+- `editNarration(id, text)`: saves the text and marks the scene `dirty`. Cues that no longer match fall back to the stagger.
+- `rerender()`: redoes the voice for dirty scenes only, then steps 6–7 for them and the final render.
+- `useRecording(file)`:
+  - `prepareRecording()` exports the narration joined with pause markers.
+  - The uploaded recording is split on long silences (ffmpeg `silencedetect`, same logic as `decouper_voix.py`) and becomes the scenes' audio (`voice.engine = 'upload'`).
+  - If the pause count doesn't match the scene count, the result screen shows the waveform with detected cuts for manual adjustment.
+
+### 4.2 Screens (`packages/web`)
+
+- **Home**:
+  - Main inputs:
+    - topic field;
+    - 4 style cards with thumbnails;
+    - optional "Add sources" (links, PDF/TXT/MD) collapsed;
+    - "Advanced" collapsed: language, length 1–10 min (default 3), voice engine and voice, provider and model.
+  - The "Generate the video" button opens Settings instead when no provider is configured.
+  - Below: earlier projects with thumbnail, title and date.
+- **Progress**:
+  - The 8 steps in plain words, with a progress bar for the current step (percentage during render), one live log line and Cancel.
+  - On failure: the message names the cause and where to fix it (e.g. "OpenAI key rejected → Settings"), with a Retry button that resumes at the failed step.
+- **Result**:
+  - The video in `@remotion/player`.
+  - The scene list, each with:
+    - a still;
+    - editable narration;
+    - sources;
+    - ⚠️ warnings;
+    - "Regenerate this scene".
+  - "Re-render" (enabled when some scene is dirty).
+  - "Use my recording".
+  - Downloads: MP4, thumbnail (choose 1 of 3), YouTube package.
+- **Settings** (gear icon):
+  - The provider with key, model, and a "Test connection" button.
+  - Voice keys, search key (Tavily/Brave), default language and default voice.
+  - Shown automatically on first launch.
+
+### 4.3 CLI
+
+`npm run make -- "<topic>" --style <name> [--sources <url|file>...] [--length <min>] [--language <code>] [--voice <engine>]` creates a project folder, runs `generate` with progress printed per step, and prints `OK <mp4 path>`. It uses the same settings file as the web UI.
 
 ## 5. Server
 
 - Fastify, serves the built web app and the API on `localhost:3210` (bound to localhost by default; the bind address is configurable for Docker).
-- REST: CRUD on projects, run step, get/patch `project.json`, upload sources/audio, settings, provider test.
+- REST: create project and start generation, list/get/delete projects, retry, cancel, regenerate scene, patch narration, re-render, upload sources/recording, settings, provider test.
 - SSE: `/projects/:id/events` streams step progress and logs.
 - Jobs: one in-memory queue per project; long jobs (research, voice, render) run there; cancelling stops the subprocess or aborts the request.
 - Static: project files (audio, stills, MP4) are served to the Player and for download.
@@ -172,8 +236,10 @@ Each step can be edited and re-run independently; re-running a step marks downst
 
 | Failure | Behaviour |
 |---|---|
-| Invalid scene JSON after 3 retries | Scene falls back to a simple `title` scene with its narration summary, `status: 'fallback'`, highlighted in UI; pipeline continues |
-| Provider auth/quota/network error | Step stops with a message naming the provider and the cause; the project stays as it was |
+| Invalid scene JSON after 3 retries | Scene falls back to a simple `title` scene with its narration summary, `status: 'fallback'`, warning on the result screen; generation continues |
+| Provider transient error (timeout, rate limit, 5xx) | Retried twice with backoff, then as below |
+| Provider auth/quota error | Step stops with a message naming the provider and the cause; the project stays at the last finished step; Retry resumes there |
+| Layout overflow | One automatic regeneration of the scene; if it persists, warning and continue |
 | CLI not installed / not logged in | Detected by "Test connection"; clear instructions to install/log in |
 | URL unreachable / PDF unreadable | Source kept with `error`, shown in UI; other sources proceed |
 | TTS failure on one scene | That scene uses an estimated duration and is flagged; others proceed |
@@ -191,19 +257,27 @@ Each step can be edited and re-run independently; re-running a step marks downst
 
 - **scenes**: every scene type × 4 styles rendered as a still from its example JSON, compared with a reference PNG (pixel-diff threshold). Schema round-trip tests.
 - **core**: unit tests for timing (`cue` → frame), chapter computation, silence splitting (on a generated test WAV), excerpt verification, provider validation/retry (fake provider returning invalid then valid output), project migrations.
-- **e2e**: fake provider + `voice: none` → full pipeline → short MP4 checked by ffprobe.
-- **web**: component tests for the scene form and fact sheet; one Playwright smoke test (create project, reach preview).
+- **e2e**: fake provider + `voice: none` → `generate` → short MP4 checked by ffprobe; resume after an injected failure at each step; `regenerateScene` and `rerender` on a generated project.
+- **web**: component tests for the home form and scene list; one Playwright smoke test (topic + style → Generate → result screen with the video), on the fake provider.
 - **CI**: GitHub Actions running lint, typecheck, unit tests, still snapshots, e2e, and a Docker build. No real API keys in CI.
 
 ## 9. Scope
 
 **v1 (this spec):** everything above.
 
-**Later (explicitly out of v1):** LLM-written custom code scenes (hybrid mode), right-to-left languages, vision-model visual checks, standalone CLI, Electron/desktop packaging, direct YouTube upload, background music, vertical 9:16 format, multi-user/hosted mode.
+**Later (explicitly out of v1):** LLM-written custom code scenes (hybrid mode), per-field scene editing forms and a timeline, right-to-left languages, vision-model visual checks, Electron/desktop packaging, direct YouTube upload, background music, vertical 9:16 format, multi-user/hosted mode.
+
+**Delivery plans:**
+1. Rendering engine: scenes + project model + render (done).
+2. LLM providers + generator steps sources → facts → script → scenes → layout → render with `voice: none`, plus the `make` CLI. Complete silent videos from a topic.
+3. Voice (edge default, ElevenLabs, OpenAI, upload + splitting), thumbnail, YouTube package, touch-up operations.
+4. Server + web UI (home, progress, result, settings).
+5. Docker compose, CI, release.
 
 ## 10. Open risks
 
 - **CLI provider terms**: providers' policies on third-party use of subscriptions may change; the mode stays opt-in and experimental, and may be removed.
-- **Small local models** may produce weak narration even when the JSON is valid; the editable UI is the mitigation. Recommended models are documented.
+- **Small local models** may produce weak narration even when the JSON is valid; the mitigation is per-scene regeneration and narration editing on the result screen. Recommended models are documented.
+- **Fully automatic generation** means errors surface only at the end; warnings on the result screen and per-scene regeneration are the mitigation, not a review step before rendering.
 - **edge-tts** relies on an unofficial Microsoft endpoint that may break; it is isolated behind the voice interface, with other engines available.
 - **Fact verification** proves an excerpt exists in a source, not that the source is right; the UI says so.
