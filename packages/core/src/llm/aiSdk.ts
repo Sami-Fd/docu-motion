@@ -71,7 +71,8 @@ export function toProviderError(e: unknown, provider: string, secrets: string[])
   if (e instanceof Error && e.name === 'AbortError') return e;
   if (APICallError.isInstance(e)) {
     const status = e.statusCode;
-    const transient = status === 429 || status === 408 || (status !== undefined && status >= 500);
+    const transient = status === 429 || status === 408 || (status !== undefined && status >= 500) ||
+      (status === undefined && (e.isRetryable || (errorCode(e) !== undefined && TRANSIENT_CODES.has(errorCode(e)!))));
     return new ProviderError(redact(e.message, secrets), {provider, transient, status});
   }
   const message = e instanceof Error ? e.message : String(e);
@@ -126,7 +127,7 @@ export function createApiProvider(
   return makeProvider(
     {
       name: `${provider}:${modelId}`,
-      capabilities: {nativeWebSearch: NATIVE_WEB_SEARCH.has(provider), vision: true},
+      capabilities: {nativeWebSearch: NATIVE_WEB_SEARCH.has(provider), vision: !['mistral', 'ollama'].includes(provider)},
       async object({jsonSchema: js, schemaName, system, prompt, signal}) {
         try {
           // generateObject is deprecated in ai 7; generateText + Output.object is the replacement.

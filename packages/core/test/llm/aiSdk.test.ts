@@ -76,6 +76,53 @@ describe('createApiProvider', () => {
     expect(calls).toBe(1);
   });
 
+  const retried = async (err: unknown) => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        if (++calls === 1) throw err;
+        return ok('{"n": 1}');
+      },
+    });
+    const p = createApiProvider(ref, settings, {languageModel: model, sleep: async () => {}});
+    expect(await p.generateObject({schema, system: 's', prompt: 'p'})).toEqual({n: 1});
+    return calls;
+  };
+
+  it('retries a 503', async () => {
+    expect(await retried(apiErr(503))).toBe(2);
+  });
+
+  it('retries a network failure (no status, isRetryable)', async () => {
+    const e = new APICallError({message: 'Cannot connect', url: 'https://x', requestBodyValues: {}, isRetryable: true});
+    expect(await retried(e)).toBe(2);
+  });
+
+  it('retries a TimeoutError', async () => {
+    const e = new Error('timed out');
+    e.name = 'TimeoutError';
+    expect(await retried(e)).toBe(2);
+  });
+
+  it('passes a user abort through unwrapped and unretried', async () => {
+    const ac = new AbortController();
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calls++;
+        ac.abort();
+        const e = new Error('The operation was aborted');
+        e.name = 'AbortError';
+        throw e;
+      },
+    });
+    const p = createApiProvider(ref, settings, {languageModel: model, sleep: async () => {}});
+    const err = await p.generateObject({schema, system: 's', prompt: 'p', signal: ac.signal}).catch((e) => e);
+    expect(err).not.toBeInstanceOf(ProviderError);
+    expect(err.message).toMatch(/abort/i);
+    expect(calls).toBe(1);
+  });
+
   it('generateText returns text', async () => {
     const model = new MockLanguageModelV4({doGenerate: ok('hello')});
     const p = createApiProvider(ref, settings, {languageModel: model});
@@ -108,6 +155,7 @@ describe('createApiProvider', () => {
     for (const [provider, web] of Object.entries(expected)) {
       const p = createApiProvider({kind: 'api', provider}, s);
       expect(p.capabilities.nativeWebSearch).toBe(web);
+      expect(p.capabilities.vision).toBe(provider !== 'mistral' && provider !== 'ollama');
       expect(p.name).toBe(`${provider}:${DEFAULT_MODELS[provider]}`);
     }
     expect(createApiProvider({kind: 'api', provider: 'openai', model: 'm'}, s).name).toBe('openai:m');
