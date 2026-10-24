@@ -5,7 +5,7 @@ import type {SceneProps} from '../film/types';
 import type {SceneOf} from '../schema';
 import {cueFrame} from '../timing';
 import {useTheme} from '../theme';
-import {SERIES_COLORS, Source, fitSize, formatNumber, useCharWidth, wrapText} from './common';
+import {SERIES_COLORS, Source, fitSize, formatNumber, twoLines, useCharWidth} from './common';
 
 const LEFT = 220;
 const RIGHT = 1700;
@@ -15,16 +15,16 @@ const MAX_H = 380;
 // Vertical bar chart: each bar grows over 20 frames from its cue, value on top, label below.
 export const BarsScene: React.FC<SceneProps<SceneOf<'bars'>>> = ({spec, narration, durationFrames, language}) => {
   const f = useCurrentFrame();
-  const {colors} = useTheme();
+  const {colors, textScale} = useTheme();
   const cw = useCharWidth();
   const n = spec.bars.length;
   const slot = (RIGHT - LEFT) / n;
   const barW = Math.min(170, slot * 0.6);
   const max = Math.max(...spec.bars.map((b) => b.value), 1e-9);
   // One font size for all category labels, on at most two lines, so the row looks even.
-  const labelLines = spec.bars.map((b) => wrapText(b.label, Math.max(6, Math.ceil(b.label.length / 2))));
+  // The font shrinks to fit rather than wrapping to a third line.
   const singleLine = spec.bars.every((b) => fitSize(b.label, slot - 20, 36, cw) >= 30);
-  const lines = singleLine ? spec.bars.map((b) => [b.label]) : labelLines;
+  const lines = spec.bars.map((b) => (singleLine ? [b.label] : twoLines(b.label)));
   const labelSize = Math.min(...lines.map((ls) => Math.min(...ls.map((l) => fitSize(l, slot - 20, 36, cw)))));
   const values = spec.bars.map((b) => `${formatNumber(b.value, language)}${spec.unit ? ` ${spec.unit}` : ''}`);
   const valueSize = Math.min(...values.map((v) => fitSize(v, slot - 10, 40, cw)));
@@ -49,7 +49,7 @@ export const BarsScene: React.FC<SceneProps<SceneOf<'bars'>>> = ({spec, narratio
             <Slide dy={40} delay={t0}>
               <g opacity={clampInterp(f, [t0, t0 + 8], [0, 1])}>
                 {lines[i]!.map((l, k) => (
-                  <Text key={k} x={cx} y={BASE_Y + 48 + k * labelSize * 1.1} size={labelSize} onBackground>{l}</Text>
+                  <Text key={k} x={cx} y={BASE_Y + 48 + k * labelSize * textScale * 1.1} size={labelSize} onBackground>{l}</Text>
                 ))}
               </g>
             </Slide>

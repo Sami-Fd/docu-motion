@@ -14,11 +14,11 @@ const TEXT_W = 1240;
 const TEXT_H = 300;
 
 /** Largest size (<= 60) at which the quote, word-wrapped, fits in TEXT_W x TEXT_H. */
-const layoutQuote = (text: string, cw: number): {size: number; lines: string[]} => {
+const layoutQuote = (text: string, cw: number, textScale: number): {size: number; lines: string[]} => {
   for (let size = 60; size > 24; size -= 2) {
     const lines = wrapText(text, Math.floor(TEXT_W / (size * cw)));
     const longest = Math.max(...lines.map((l) => l.length));
-    if (lines.length * size * 1.3 <= TEXT_H && longest * size * cw <= TEXT_W) return {size, lines};
+    if (lines.length * size * textScale * 1.3 <= TEXT_H && longest * size * cw <= TEXT_W) return {size, lines};
   }
   return {size: 24, lines: wrapText(text, Math.floor(TEXT_W / (24 * cw)))};
 };
@@ -38,11 +38,11 @@ const QuoteMark: React.FC<{x: number; y: number; color: string}> = ({x, y, color
 // A large card with the quote and its author line underneath.
 export const QuoteScene: React.FC<SceneProps<SceneOf<'quote'>>> = ({spec, narration, durationFrames}) => {
   const f = useCurrentFrame();
-  const {colors} = useTheme();
+  const {colors, textScale} = useTheme();
   const cw = useCharWidth();
   const t0 = cueFrame(narration, undefined, durationFrames, 0);
-  const {size, lines} = layoutQuote(spec.text, cw);
-  const lineH = size * 1.3;
+  const {size, lines} = layoutQuote(spec.text, cw, textScale);
+  const lineH = size * textScale * 1.3;
   const firstY = CY - 40 - ((lines.length - 1) * lineH) / 2 + size * 0.35;
   const author = `— ${spec.author}`;
   return (

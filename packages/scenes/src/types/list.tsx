@@ -10,7 +10,7 @@ import {Card, PEOPLE_COLORS, Source, fitSize, useCharWidth} from './common';
 type Icon = SceneOf<'list'>['items'][number]['icon'];
 
 const TOP = 300;
-// Five items fill the safe area (300..844); three or fewer get roomier cards.
+// Five 96 px cards end at y = 852 (300 + 5*96 + 4*18); three or fewer get roomier 120 px cards.
 const cardHeight = (n: number) => (n <= 3 ? 120 : 96);
 const GAP = 18;
 const CARD_W = 1360;

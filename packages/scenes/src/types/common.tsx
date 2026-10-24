@@ -1,6 +1,7 @@
 import React from 'react';
 import {Text} from '../kit';
 import {useTheme} from '../theme';
+import {decimalsOf} from './textLayout';
 
 // Colours from the skill's example scenes (fixed across styles, like BLEU / ROUGE / COULEURS_GENS there).
 export const BLUE = '#3f6fb5';
@@ -11,32 +12,7 @@ export const ELDERLY_COLOR = '#b7a28c';
 
 export const useCharWidth = (): number => useTheme().charWidth;
 
-/** Largest font size <= maxSize at which `text` fits in `maxWidth` px. */
-export const fitSize = (text: string, maxWidth: number, maxSize: number, charWidth: number): number =>
-  Math.min(maxSize, maxWidth / Math.max(1, text.length * charWidth));
-
-/** Greedy word wrap to lines of at most `maxChars` characters (a longer word gets its own line). */
-export const wrapText = (text: string, maxChars: number): string[] => {
-  const lines: string[] = [];
-  let line = '';
-  for (const word of text.split(/\s+/).filter((w) => w !== '')) {
-    if (line === '') line = word;
-    else if (line.length + 1 + word.length <= maxChars) line += ` ${word}`;
-    else {
-      lines.push(line);
-      line = word;
-    }
-  }
-  if (line !== '') lines.push(line);
-  return lines;
-};
-
-/** Number of decimals of `n` as written (capped at 3), so animated values keep a stable width. */
-export const decimalsOf = (n: number): number => {
-  const s = String(n);
-  const dot = s.indexOf('.');
-  return dot < 0 ? 0 : Math.min(3, s.length - dot - 1);
-};
+export {decimalsOf, fitSize, twoLines, wrapText} from './textLayout';
 
 export const formatNumber = (n: number, locale: string, decimals = decimalsOf(n)): string => {
   try {

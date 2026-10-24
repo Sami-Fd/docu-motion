@@ -15,10 +15,15 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./__snapshots__/', import.meta.url))
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
 const STYLES: StyleName[] = ['papier', 'craie', 'infographie', 'nuit'];
 const MAX_DIFF_RATIO = 0.005;
-const BORDER = 30;
-// Anti-aliasing tolerance for the border test: channel delta treated as identical, and allowed odd pixels.
-const BORDER_CHANNEL_TOLERANCE = 8;
-const BORDER_MAX_PIXELS = 20;
+// Safe-area test: everything a scene draws on top of its background (Label zone, content, Source line)
+// must stay inside this rectangle. `title` is exempt: its hills / sea are full-bleed by design.
+// y0 is 50, not 90: the Label (y = 150, 130 px high) starts at y = 85 before its -1.5° tilt, its
+// paper displacement and the nuit glow; measured tops are 58 (nuit) to 75 (papier).
+const SAFE = {x0: 60, x1: 1860, y0: 50, y1: 900};
+// Anti-aliasing tolerance: a channel delta up to this counts as identical; a few odd pixels are allowed.
+const CHANNEL_TOLERANCE = 8;
+const MAX_OUTSIDE_PIXELS = 20;
+const IN_CI = Boolean(process.env.CI);
 
 let root: string;
 // One project dir (hence one bundle) for every render; the style comes from the project props.
@@ -56,7 +61,7 @@ afterAll(async () => {
 });
 
 // Snapshots are stored at half resolution (2x2 box filter): the paper and chalk grain makes
-// full-size PNGs ~3.5 MB each (65 MB for 36), half-size ones ~19 MB in total.
+// full-size PNGs ~3.5 MB each (65 MB for 36), half-size ones ~15 MB in total.
 const half = (src: PNG): PNG => {
   const w = src.width / 2;
   const h = src.height / 2;
@@ -78,7 +83,11 @@ describe('scene snapshots', () => {
   it.each(cases)('%s in %s matches its snapshot', async (type, style) => {
     const png = half(await renderExample(type, style));
     const snapshot = path.join(SNAPSHOT_DIR, `${type}-${style}.png`);
-    if (UPDATE || !existsSync(snapshot)) {
+    const missing = !existsSync(snapshot);
+    if (missing && !UPDATE && IN_CI) {
+      throw new Error(`Missing snapshot ${snapshot}. Record it locally with UPDATE_SNAPSHOTS=1 npm run test:visual -- snapshots`);
+    }
+    if (UPDATE || missing) {
       await fs.mkdir(SNAPSHOT_DIR, {recursive: true});
       await fs.writeFile(snapshot, PNG.sync.write(png));
       return;
@@ -96,32 +105,38 @@ describe('scene snapshots', () => {
     }
   }, 180_000);
 
-  it('layout stays inside frame', async () => {
+  it('layout stays inside the safe area', async () => {
     const report: string[] = [];
     let worst = 0;
     for (const style of STYLES) {
       const bg = await renderBackground(style);
       for (const type of SCENE_TYPES) {
+        if (type === 'title') continue;
         const png = await renderExample(type, style);
-        let differing = 0;
+        let outside = 0;
+        const box = {x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity};
         for (let y = 0; y < png.height; y++) {
           for (let x = 0; x < png.width; x++) {
-            const inBand = x < BORDER || x >= png.width - BORDER || y < BORDER || y >= png.height - BORDER;
-            if (!inBand) continue;
             const i = (y * png.width + x) * 4;
-            for (let c = 0; c < 4; c++) {
-              if (Math.abs(png.data[i + c]! - bg.data[i + c]!) > BORDER_CHANNEL_TOLERANCE) {
-                differing++;
-                break;
-              }
+            let differs = false;
+            for (let c = 0; c < 4 && !differs; c++) {
+              differs = Math.abs(png.data[i + c]! - bg.data[i + c]!) > CHANNEL_TOLERANCE;
             }
+            if (!differs) continue;
+            box.x0 = Math.min(box.x0, x);
+            box.y0 = Math.min(box.y0, y);
+            box.x1 = Math.max(box.x1, x);
+            box.y1 = Math.max(box.y1, y);
+            if (x < SAFE.x0 || x >= SAFE.x1 || y < SAFE.y0 || y >= SAFE.y1) outside++;
           }
         }
-        worst = Math.max(worst, differing);
-        if (differing > BORDER_MAX_PIXELS) report.push(`${type}-${style}: ${differing} border pixels differ from the background`);
+        worst = Math.max(worst, outside);
+        const line = `${type}-${style}: drawn area x ${box.x0}-${box.x1}, y ${box.y0}-${box.y1}, ${outside} px outside`;
+        if (process.env.SAFE_AREA_VERBOSE) console.log(line);
+        if (outside > MAX_OUTSIDE_PIXELS) report.push(line);
       }
     }
-    console.log(`layout stays inside frame: max differing border pixels = ${worst}`);
+    console.log(`layout stays inside the safe area: max pixels outside = ${worst}`);
     expect(report).toEqual([]);
   }, 600_000);
 });

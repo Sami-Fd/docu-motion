@@ -5,7 +5,7 @@ import type {SceneProps} from '../film/types';
 import type {SceneOf} from '../schema';
 import {cueFrame} from '../timing';
 import {useTheme} from '../theme';
-import {SERIES_COLORS, Source, fitSize, useCharWidth, wrapText} from './common';
+import {SERIES_COLORS, Source, fitSize, twoLines, useCharWidth} from './common';
 
 const LINE_Y = 560;
 const LEFT = 160;
@@ -15,13 +15,14 @@ const RIGHT = 1760;
 // The line draws itself from the first event to the last.
 export const TimelineScene: React.FC<SceneProps<SceneOf<'timeline'>>> = ({spec, narration, durationFrames}) => {
   const f = useCurrentFrame();
-  const {colors} = useTheme();
+  const {colors, textScale} = useTheme();
   const cw = useCharWidth();
   const n = spec.events.length;
   const slot = (RIGHT - LEFT) / n;
   const xs = spec.events.map((_, i) => LEFT + slot * (i + 0.5));
   const cues = spec.events.map((e, i) => cueFrame(narration, e.cue, durationFrames, i));
-  const lines = spec.events.map((e) => wrapText(e.label, Math.max(8, Math.ceil(e.label.length / 2) + 2)));
+  // At most two lines per label; the shared font size shrinks to fit the longest line.
+  const lines = spec.events.map((e) => (fitSize(e.label, slot - 24, 36, cw) >= 30 ? [e.label] : twoLines(e.label)));
   const labelSize = Math.min(...lines.flat().map((l) => fitSize(l, slot - 24, 36, cw)));
   const dateSize = Math.min(...spec.events.map((e) => fitSize(e.date, slot - 24, 56, cw * 1.05)));
   const first = Math.min(...cues);
@@ -53,7 +54,7 @@ export const TimelineScene: React.FC<SceneProps<SceneOf<'timeline'>>> = ({spec, 
             <Slide dy={30} delay={t0 + 4}>
               <g opacity={clampInterp(f, [t0 + 4, t0 + 12], [0, 1])}>
                 {lines[i]!.map((l, k) => (
-                  <Text key={k} x={x} y={LINE_Y + 85 + k * labelSize * 1.2} size={labelSize} onBackground>{l}</Text>
+                  <Text key={k} x={x} y={LINE_Y + 85 + k * labelSize * textScale * 1.2} size={labelSize} onBackground>{l}</Text>
                 ))}
               </g>
             </Slide>
