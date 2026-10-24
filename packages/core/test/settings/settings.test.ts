@@ -1,8 +1,9 @@
-import {mkdtemp, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {describe, expect, it} from 'vitest';
-import {defaultDataDir, loadSettings, saveSettings} from '../../src/settings/settings.js';
+import {defaultDataDir, loadSettings, requireProvider, saveSettings} from '../../src/settings/settings.js';
 
 const tmp = () => mkdtemp(path.join(tmpdir(), 'dm-é settings-'));
 
@@ -39,8 +40,38 @@ describe('settings', () => {
   it('defaultDataDir falls back to <repo>/data', () => {
     const old = process.env.DOCU_MOTION_DATA;
     delete process.env.DOCU_MOTION_DATA;
-    expect(path.basename(defaultDataDir())).toBe('data');
-    expect(path.basename(path.dirname(defaultDataDir()))).toBe('docu-motion');
+    expect(defaultDataDir()).toBe(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'data'));
     if (old !== undefined) process.env.DOCU_MOTION_DATA = old;
+  });
+});
+
+describe('settings safety', () => {
+  it('requireProvider throws without a provider and returns it otherwise', async () => {
+    const s = await loadSettings(await tmp(), {});
+    expect(s.provider).toBeUndefined();
+    expect(() => requireProvider(s)).toThrow('No AI provider configured');
+    expect(requireProvider({...s, provider: {kind: 'fake', provider: 'fake'}})).toEqual({kind: 'fake', provider: 'fake'});
+  });
+  it('never writes env-sourced values to config.json', async () => {
+    const dir = await tmp();
+    const env = {OPENAI_API_KEY: 'sk-from-env-123456', TAVILY_API_KEY: 'tv-env-123456', OLLAMA_BASE_URL: 'http://env/v1'};
+    await writeFile(path.join(dir, 'config.json'), JSON.stringify({keys: {tavily: 'file-tv'}}));
+    const s = await loadSettings(dir, env);
+    s.defaultLanguage = 'en';
+    await saveSettings(dir, s, env);
+    const text = await readFile(path.join(dir, 'config.json'), 'utf8');
+    expect(text).not.toContain('sk-from-env');
+    expect(text).not.toContain('tv-env');
+    expect(text).not.toContain('http://env');
+    const back = await loadSettings(dir, {});
+    expect(back.keys.tavily).toBe('file-tv');
+    expect(back.defaultLanguage).toBe('en');
+  });
+  it('invalid config.json error names only the path', async () => {
+    const dir = await tmp();
+    await writeFile(path.join(dir, 'config.json'), '{ "keys": SECRET-snippet');
+    const err = (await loadSettings(dir, {}).catch((e) => e)) as Error;
+    expect(err.message).toContain('config.json');
+    expect(err.message).not.toContain('SECRET-snippet');
   });
 });

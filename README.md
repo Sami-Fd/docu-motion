@@ -6,7 +6,7 @@ A self-hosted app that turns a topic into a coded motion-design documentary vide
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - Network access when rendering: the first render downloads Chrome Headless Shell (handled by Remotion), and every render fetches the Google fonts from fonts.gstatic.com
 
 ## Quick start

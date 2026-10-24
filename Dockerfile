@@ -1,7 +1,7 @@
 # Renders a docu-motion project inside a container.
 #   docker build -t docu-motion .
 #   docker run --rm -v "$PWD/examples:/app/examples" docu-motion examples/how-it-works --style nuit
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 # Shared libraries Chrome Headless Shell needs (from Remotion's Docker guide).
 RUN apt-get update && apt-get install -y --no-install-recommends \

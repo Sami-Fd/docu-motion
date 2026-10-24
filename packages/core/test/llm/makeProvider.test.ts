@@ -95,3 +95,78 @@ describe('redact', () => {
     expect(redact('abc here', ['abc'])).toBe('abc here');
   });
 });
+
+describe('redaction depth and abort', () => {
+  const caps = {nativeWebSearch: false, vision: false};
+  const SECRET = 'sk-abcdef123456';
+  it('leaves the secret nowhere reachable on the thrown error', async () => {
+    const inner = new Error(`inner ${SECRET}`);
+    const err: any = new Error(`outer ${SECRET}`, {cause: inner});
+    err.url = `https://x/?key=${SECRET}`;
+    err.requestBodyValues = {k: SECRET};
+    err.status = 401;
+    const p = makeProvider(
+      {name: 'x', capabilities: caps, object: async () => { throw err; }, text: async () => ''},
+      {secrets: [SECRET]},
+    );
+    const e: any = await p.generateObject({schema, system: '', prompt: ''}).catch((x) => x);
+    expect(e).toBeInstanceOf(ProviderError);
+    expect(e.status).toBe(401);
+    expect(JSON.stringify(e, Object.getOwnPropertyNames(e))).not.toContain(SECRET);
+    expect(String(e.stack)).not.toContain(SECRET);
+    expect(e.message).toContain('***');
+  });
+  it('redacts the cause chain of a ProviderError and wraps non-Errors', async () => {
+    const pe = new ProviderError(`m ${SECRET}`, {provider: 'x', transient: false});
+    (pe as any).cause = new Error(`c ${SECRET}`);
+    const p = makeProvider(
+      {name: 'x', capabilities: caps, object: async () => { throw pe; }, text: async () => { throw `str ${SECRET}`; }},
+      {secrets: [SECRET]},
+    );
+    const e: any = await p.generateObject({schema, system: '', prompt: ''}).catch((x) => x);
+    expect(e.cause.message).not.toContain(SECRET);
+    expect(e.stack).not.toContain(SECRET);
+    const t: any = await p.generateText({system: '', prompt: ''}).catch((x) => x);
+    expect(t).toBeInstanceOf(ProviderError);
+    expect(t.message).not.toContain(SECRET);
+  });
+  it('aborts during the backoff without another raw call', async () => {
+    let calls = 0;
+    const ac = new AbortController();
+    const p = makeProvider(
+      {
+        name: 'x',
+        capabilities: caps,
+        object: async () => {
+          calls++;
+          throw new ProviderError('rate', {provider: 'x', transient: true, status: 429});
+        },
+        text: async () => '',
+      },
+      {sleep: () => new Promise<void>(() => {})},
+    );
+    const pr = p.generateObject({schema, system: '', prompt: '', signal: ac.signal}).catch((x) => x);
+    await new Promise((r) => setTimeout(r, 10));
+    ac.abort();
+    const e: any = await pr;
+    expect(e.message).toMatch(/abort/i);
+    expect(calls).toBe(1);
+  });
+  it('stops the validation loop when aborted between attempts', async () => {
+    let calls = 0;
+    const ac = new AbortController();
+    const p = makeProvider({
+      name: 'x',
+      capabilities: caps,
+      object: async () => {
+        calls++;
+        ac.abort();
+        return {n: 'bad'};
+      },
+      text: async () => '',
+    });
+    const e: any = await p.generateObject({schema, system: '', prompt: '', signal: ac.signal}).catch((x) => x);
+    expect(e.message).toMatch(/abort/i);
+    expect(calls).toBe(1);
+  });
+});
