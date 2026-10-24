@@ -85,7 +85,7 @@ export function toProviderError(e: unknown, provider: string, secrets: string[])
   return new ProviderError(redact(message, secrets), {provider, transient});
 }
 
-function buildModel(provider: string, modelId: string, settings: Settings): LanguageModel {
+export function buildModel(provider: string, modelId: string, settings: Settings): LanguageModel {
   const keys = settings.keys;
   switch (provider) {
     case 'anthropic':
