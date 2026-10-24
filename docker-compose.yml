@@ -1,6 +1,12 @@
+# Docker is the reference environment (Node 22 + Chrome deps pinned in the image).
+#
 # Render a project:   docker compose run --rm render examples/how-it-works --style craie
 # Default demo:       docker compose up render
 # Visual preview:     docker compose --profile studio up -d studio   → http://localhost:3001
+# Unit tests:         docker compose run --rm dev test
+# Visual tests:       docker compose run --rm dev test:visual
+# Type check:         docker compose run --rm dev typecheck
+# Any npm script:     docker compose run --rm dev <script> [-- args]
 services:
   render:
     build: .
@@ -15,3 +21,23 @@ services:
     ports:
       - "3001:3000"
     profiles: ["studio"]
+
+  # Works on the live source tree; node_modules stay in Linux-only volumes.
+  dev:
+    image: docu-motion
+    working_dir: /app
+    entrypoint: ["sh", "/app/scripts/docker-run.sh"]
+    command: ["test"]
+    environment:
+      CI: "1"
+    volumes:
+      - .:/app
+      - root_modules:/app/node_modules
+      - scenes_modules:/app/packages/scenes/node_modules
+      - core_modules:/app/packages/core/node_modules
+    profiles: ["dev"]
+
+volumes:
+  root_modules:
+  scenes_modules:
+  core_modules:
