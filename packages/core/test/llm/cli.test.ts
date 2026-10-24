@@ -1,7 +1,7 @@
 import {fileURLToPath} from 'node:url';
 import {afterEach, describe, expect, it} from 'vitest';
 import {z} from 'zod';
-import {createCliProvider} from '../../src/llm/cli.js';
+import {createCliProvider, planSpawn} from '../../src/llm/cli.js';
 import {createProvider} from '../../src/llm/registry.js';
 import {ProviderError} from '../../src/llm/types.js';
 import {SettingsSchema} from '../../src/settings/settings.js';
@@ -65,12 +65,76 @@ describe('createCliProvider', () => {
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 300);
     const start = Date.now();
-    await expect(p.generateText({system: 's', prompt: 'p', signal: ac.signal})).rejects.toThrow();
+    await expect(p.generateText({system: 's', prompt: 'p', signal: ac.signal})).rejects.toMatchObject({name: 'AbortError'});
     expect(Date.now() - start).toBeLessThan(2000);
+  });
+
+  it('round-trips accented UTF-8 prompts', async () => {
+    process.env.FAKE_CLI_MODE = 'echo';
+    const p = createCliProvider({kind: 'cli', provider: 'gemini'}, deps);
+    const out = JSON.parse(await p.generateText({system: 's', prompt: 'été — 日本語 😀'}));
+    expect(out.input).toContain('été — 日本語 😀');
+  });
+
+  it('throws on claude is_error output even with exit 0', async () => {
+    process.env.FAKE_CLI_MODE = 'claude-error';
+    const p = createCliProvider({kind: 'cli', provider: 'claude'}, deps);
+    const err = await p.generateText({system: 's', prompt: 'p'}).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.message).toContain('Invalid API key');
+    expect(err.transient).toBe(false);
+  });
+
+  it('reads the claude error from stdout on non-zero exit', async () => {
+    process.env.FAKE_CLI_MODE = 'claude-fail';
+    const p = createCliProvider({kind: 'cli', provider: 'claude'}, deps);
+    const err = await p.generateText({system: 's', prompt: 'p'}).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.message).toContain('Please run /login');
+  });
+
+  it('times out as a non-transient error', async () => {
+    process.env.FAKE_CLI_MODE = 'sleep';
+    const p = createCliProvider({kind: 'cli', provider: 'claude'}, {...deps, timeoutMs: 200});
+    const err = await p.generateText({system: 's', prompt: 'p'}).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.transient).toBe(false);
+    expect(err.message).toContain('timed out');
+  });
+
+  it('kills the child when stdout exceeds the cap', async () => {
+    process.env.FAKE_CLI_MODE = 'big';
+    const p = createCliProvider({kind: 'cli', provider: 'claude'}, {...deps, maxStdoutBytes: 1024});
+    const err = await p.generateText({system: 's', prompt: 'p'}).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.transient).toBe(false);
+    expect(err.message).toContain('output');
   });
 
   it('is wired into createProvider', () => {
     const p = createProvider({kind: 'cli', provider: 'gemini'}, SettingsSchema.parse({}));
     expect(p.name).toBe('cli:gemini');
+  });
+});
+
+describe('planSpawn', () => {
+  const A = String.raw`C:\npm\ `.trim();
+  const EXE = String.raw`C:\bin\claude.exe`;
+  it('prefers .exe', () => {
+    const p = planSpawn(`${A}claude\r\n${A}claude.cmd\r\n${EXE}\r\n`, 'win32', 'claude', ['-p']);
+    expect(p).toEqual({file: EXE, args: ['-p'], verbatim: false});
+  });
+  it('picks .cmd over extensionless and .ps1', () => {
+    const p = planSpawn(`${A}claude\r\n${A}claude.cmd\r\n${A}claude.ps1\r\n`, 'win32', 'claude', ['-p'], 'cmd.exe');
+    expect(p?.file).toBe('cmd.exe');
+    expect(p?.args.at(-1)).toContain('claude.cmd');
+    expect(p?.verbatim).toBe(true);
+  });
+  it('ignores extensionless-only results', () => {
+    expect(planSpawn(`${A}claude\r\n`, 'win32', 'claude', [])).toBeUndefined();
+  });
+  it('refuses paths with & or %', () => {
+    expect(planSpawn(String.raw`C:\a&b\claude.cmd`, 'win32', 'claude', [])).toBeUndefined();
+    expect(planSpawn(String.raw`C:\%TEMP%\claude.cmd`, 'win32', 'claude', [])).toBeUndefined();
   });
 });

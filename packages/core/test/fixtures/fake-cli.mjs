@@ -13,6 +13,14 @@ process.stdin.on('end', () => {
     process.exit(2);
   } else if (mode === 'echo') {
     process.stdout.write(JSON.stringify({args: process.argv.slice(2), input}));
+  } else if (mode === 'claude-error') {
+    process.stdout.write(JSON.stringify({type: 'result', subtype: 'success', is_error: true, result: 'Invalid API key'}));
+  } else if (mode === 'claude-fail') {
+    process.stdout.write(JSON.stringify({type: 'result', is_error: true, result: 'Please run /login'}));
+    process.exit(1);
+  } else if (mode === 'big') {
+    process.stdout.write('x'.repeat(2 * 1024 * 1024));
+    setTimeout(() => {}, 10000);
   } else if (mode === 'sleep') {
     setTimeout(() => {}, 10000);
   }
