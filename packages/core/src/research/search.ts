@@ -22,14 +22,16 @@ async function httpFailure(res: Response, label: string, key: string): Promise<E
 }
 
 function rethrow(e: unknown, label: string, key: string): never {
+  if (e instanceof Error && e.name === 'AbortError') throw e;
   const msg = e instanceof Error ? e.message : String(e);
   throw new Error(redact(msg.startsWith(`${label} search failed`) ? msg : `${label} search failed: ${msg}`, [key]));
 }
 
-export async function tavilySearch(query: string, key: string, fetchFn: typeof fetch): Promise<SearchHit[]> {
+export async function tavilySearch(query: string, key: string, fetchFn: typeof fetch, signal?: AbortSignal): Promise<SearchHit[]> {
   try {
     const res = await fetchFn('https://api.tavily.com/search', {
       method: 'POST',
+      signal,
       headers: {'content-type': 'application/json', authorization: `Bearer ${key}`},
       body: JSON.stringify({query, max_results: MAX_RESULTS, include_raw_content: true}),
     });
@@ -48,10 +50,10 @@ export async function tavilySearch(query: string, key: string, fetchFn: typeof f
   }
 }
 
-export async function braveSearch(query: string, key: string, fetchFn: typeof fetch): Promise<SearchHit[]> {
+export async function braveSearch(query: string, key: string, fetchFn: typeof fetch, signal?: AbortSignal): Promise<SearchHit[]> {
   try {
     const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${MAX_RESULTS}`;
-    const res = await fetchFn(url, {headers: {accept: 'application/json', 'X-Subscription-Token': key}});
+    const res = await fetchFn(url, {signal, headers: {accept: 'application/json', 'X-Subscription-Token': key}});
     if (!res.ok) throw await httpFailure(res, 'Brave', key);
     const data = (await res.json()) as {web?: {results?: {title?: string; url?: string}[]}};
     return (data.web?.results ?? [])
@@ -76,7 +78,7 @@ export function nativeSearchFor(
   ref: ProviderRef,
   settings: Settings,
   deps: {languageModel?: LanguageModel} = {},
-): ((q: string) => Promise<SearchHit[]>) | undefined {
+): ((q: string, signal?: AbortSignal) => Promise<SearchHit[]>) | undefined {
   if (ref.kind !== 'api') return undefined;
   let tools: Record<string, unknown>;
   switch (ref.provider) {
@@ -93,13 +95,14 @@ export function nativeSearchFor(
       return undefined;
   }
   const secrets = Object.values(settings.keys).filter((v): v is string => typeof v === 'string' && v.length > 0);
-  return async (query) => {
+  return async (query, signal) => {
     try {
       const model = deps.languageModel ?? buildModel(ref.provider, ref.model ?? DEFAULT_MODELS[ref.provider]!, settings);
       const r = await generateText({
         model,
         tools: tools as ToolSet,
         prompt: `Search the web for: ${query}\nList the most relevant, reliable pages.`,
+        abortSignal: signal,
         maxRetries: 0,
       });
       return sourcesToHits(r.sources).slice(0, MAX_RESULTS);
@@ -115,8 +118,14 @@ export function resolveWebSearch(
   hasUserSources: boolean,
 ): 'off' | 'native' | 'tavily' | 'brave' {
   if (hasUserSources) return 'off';
-  if (settings.search !== 'auto') return settings.search;
-  if (ref.kind === 'api' && ['anthropic', 'openai', 'google'].includes(ref.provider)) return 'native';
+  const native = ref.kind === 'api' && ['anthropic', 'openai', 'google'].includes(ref.provider);
+  const s = settings.search;
+  if (s === 'off') return 'off';
+  if (s === 'native' && native) return 'native';
+  if (s === 'tavily' && settings.keys.tavily) return 'tavily';
+  if (s === 'brave' && settings.keys.brave) return 'brave';
+  // auto, or an explicit choice that cannot be used: fall back to the auto chain
+  if (native) return 'native';
   if (settings.keys.tavily) return 'tavily';
   if (settings.keys.brave) return 'brave';
   return 'off';

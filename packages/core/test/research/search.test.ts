@@ -25,7 +25,17 @@ describe('resolveWebSearch', () => {
     expect(resolveWebSearch(settings(), api('mistral'), false)).toBe('off');
   });
   it('explicit setting wins over auto', () => {
-    expect(resolveWebSearch(settings({search: 'brave'}), api('anthropic'), false)).toBe('brave');
+    expect(resolveWebSearch(settings({search: 'brave', keys: {brave: 'brave-12345678'}}), api('anthropic'), false)).toBe('brave');
+  });
+  it('explicit native on an unsupported provider falls back to tavily / off', () => {
+    expect(resolveWebSearch(settings({search: 'native', keys: {tavily: 'tvly-12345678'}}), api('mistral'), false)).toBe('tavily');
+    expect(resolveWebSearch(settings({search: 'native'}), api('mistral'), false)).toBe('off');
+  });
+  it('explicit brave without a brave key falls back to tavily', () => {
+    expect(resolveWebSearch(settings({search: 'brave', keys: {tavily: 'tvly-12345678'}}), api('mistral'), false)).toBe('tavily');
+  });
+  it('explicit off stays off', () => {
+    expect(resolveWebSearch(settings({search: 'off'}), api('anthropic'), false)).toBe('off');
   });
   it('auto + cli provider never picks native', () => {
     expect(resolveWebSearch(settings(), {kind: 'cli', provider: 'anthropic'}, false)).toBe('off');
@@ -33,6 +43,16 @@ describe('resolveWebSearch', () => {
 });
 
 describe('tavilySearch', () => {
+  it('passes the abort signal to fetch', async () => {
+    const ac = new AbortController();
+    let got: AbortSignal | null | undefined;
+    const f = (async (_u: string, init: RequestInit) => {
+      got = init.signal;
+      return json({results: []});
+    }) as unknown as typeof fetch;
+    await tavilySearch('q', 'tvly-secret-key', f, ac.signal);
+    expect(got).toBe(ac.signal);
+  });
   it('posts the query and maps hits, preferring raw_content', async () => {
     let seen: {url: string; init: RequestInit} | undefined;
     const f = (async (url: string, init: RequestInit) => {

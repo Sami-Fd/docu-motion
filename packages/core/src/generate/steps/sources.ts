@@ -22,11 +22,11 @@ export function normalizeUrl(u: string): string {
   }
 }
 
-function searchFn(web: Project['brief']['webSearch'], ctx: StepContext): ((q: string) => Promise<SearchHit[]>) | undefined {
+function searchFn(web: Project['brief']['webSearch'], ctx: StepContext): ((q: string, signal?: AbortSignal) => Promise<SearchHit[]>) | undefined {
   const {tavily, brave} = ctx.settings.keys;
   if (web === 'native') return ctx.nativeSearch;
-  if (web === 'tavily' && tavily) return (q) => tavilySearch(q, tavily, ctx.fetch);
-  if (web === 'brave' && brave) return (q) => braveSearch(q, brave, ctx.fetch);
+  if (web === 'tavily' && tavily) return (q, sig) => tavilySearch(q, tavily, ctx.fetch, sig);
+  if (web === 'brave' && brave) return (q, sig) => braveSearch(q, brave, ctx.fetch, sig);
   return undefined;
 }
 
@@ -41,7 +41,7 @@ export const sourcesStep: Step = async (p, ctx) => {
   for (const uri of p.brief.sources) {
     const kind = isUrl(uri) ? 'url' : 'file';
     if (kind === 'url') seen.add(normalizeUrl(uri));
-    sources.push(await ingestSource(ctx.projectDir, {id: nextId(), uri, kind}, {fetch: ctx.fetch}));
+    sources.push(await ingestSource(ctx.projectDir, {id: nextId(), uri, kind}, {fetch: ctx.fetch, signal: ctx.signal}));
   }
 
   const web = p.brief.webSearch;
@@ -58,8 +58,9 @@ export const sourcesStep: Step = async (p, ctx) => {
           signal: ctx.signal,
         });
         for (const q of queries) {
+          ctx.signal?.throwIfAborted();
           try {
-            hits.push(...(await search(q)));
+            hits.push(...(await search(q, ctx.signal)));
           } catch (e) {
             if (ctx.signal?.aborted) throw e;
             log(`Search failed for "${q}": ${msg(e)}`);
@@ -71,6 +72,7 @@ export const sourcesStep: Step = async (p, ctx) => {
       }
       let kept = 0;
       for (const hit of hits) {
+        ctx.signal?.throwIfAborted();
         if (kept >= MAX_SEARCH_SOURCES) break;
         const norm = normalizeUrl(hit.url);
         if (seen.has(norm)) continue;
@@ -78,8 +80,8 @@ export const sourcesStep: Step = async (p, ctx) => {
         kept++;
         const id = nextId();
         const s: Source = hit.content
-          ? await ingestSource(ctx.projectDir, {id, uri: hit.url, kind: 'search', title: hit.title, text: hit.content}, {fetch: ctx.fetch})
-          : {...(await ingestSource(ctx.projectDir, {id, uri: hit.url, kind: 'url', title: hit.title}, {fetch: ctx.fetch})), kind: 'search'};
+          ? await ingestSource(ctx.projectDir, {id, uri: hit.url, kind: 'search', title: hit.title, text: hit.content}, {fetch: ctx.fetch, signal: ctx.signal})
+          : {...(await ingestSource(ctx.projectDir, {id, uri: hit.url, kind: 'url', title: hit.title}, {fetch: ctx.fetch, signal: ctx.signal})), kind: 'search'};
         sources.push(s);
       }
     }

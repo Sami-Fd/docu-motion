@@ -133,4 +133,54 @@ describe('sourcesStep', () => {
     const out = await sourcesStep(project({webSearch: 'native'}), ctx);
     expect(out.sources.map((s) => s.uri)).toEqual(['https://n.test/a', 'https://n.test/b']);
   });
+
+  it('aborts promptly during a search fetch and starts no further fetch', async () => {
+    const ac = new AbortController();
+    const {ctx, calls} = setup((_u, init) => new Promise<Response>((_r, reject) => {
+      init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason));
+    }));
+    ctx.signal = ac.signal;
+    const run = sourcesStep(project(), ctx);
+    setTimeout(() => ac.abort(), 20);
+    await expect(run).rejects.toMatchObject({name: 'AbortError'});
+    expect(calls).toHaveLength(1);
+  });
+
+  it('aborts during user source ingestion', async () => {
+    const ac = new AbortController();
+    const {ctx, calls} = setup((_u, init) => new Promise<Response>((_r, reject) => {
+      init!.signal!.addEventListener('abort', () => reject(init!.signal!.reason));
+    }));
+    ctx.signal = ac.signal;
+    const run = sourcesStep(project({webSearch: 'off', sources: ['https://u.test/a', 'https://u.test/b']}), ctx);
+    setTimeout(() => ac.abort(), 20);
+    await expect(run).rejects.toMatchObject({name: 'AbortError'});
+    expect(calls).toHaveLength(1);
+  });
+
+  it('logs a per-query failure and counts failed sources on partial success', async () => {
+    const {ctx, logs} = setup((url, init) => {
+      if (url.startsWith('https://api.tavily.com')) {
+        if (JSON.parse(init!.body as string).query === 'a') return new Response('x', {status: 500});
+        return tavily([{title: 'N', url: 'https://n.test/p'}]);
+      }
+      return new Response('gone', {status: 404});
+    });
+    const out = await sourcesStep(project(), ctx);
+    expect(logs.some((l) => l.startsWith('Search failed for'))).toBe(true);
+    expect(out.sources).toHaveLength(1);
+    expect(logs.at(-1)).toBe('1 sources (1 failed)');
+  });
+
+  it.each([
+    ['4 queries', ['a', 'b', 'c', 'd']],
+    ['an overlong query', ['x'.repeat(121)]],
+  ])('skips search with a log when the LLM returns %s', async (_n, queries) => {
+    const {ctx, logs, calls} = setup(() => tavily([]));
+    ctx.llm = createFakeProvider(() => ({queries}));
+    const out = await sourcesStep(project(), ctx);
+    expect(out.sources).toEqual([]);
+    expect(calls).toHaveLength(0);
+    expect(logs.some((l) => l.startsWith('Web search skipped'))).toBe(true);
+  });
 });

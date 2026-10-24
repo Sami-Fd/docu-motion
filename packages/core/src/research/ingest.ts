@@ -16,7 +16,7 @@ export type IngestInput = {
   text?: string;
 };
 
-export type IngestDeps = {fetch: typeof fetch; timeoutMs?: number; maxBytes?: number};
+export type IngestDeps = {fetch: typeof fetch; timeoutMs?: number; maxBytes?: number; signal?: AbortSignal};
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BYTES = 5_000_000;
@@ -125,10 +125,13 @@ async function fromUrl(input: IngestInput, deps: IngestDeps): Promise<{title?: s
       controller.abort(err);
       reject(err);
     }, timeoutMs);
+    deps.signal?.addEventListener('abort', () => reject(deps.signal!.reason ?? new DOMException('Aborted', 'AbortError')), {once: true});
   });
   aborted.catch(() => {});
+  const fetchSignal = deps.signal ? AbortSignal.any([controller.signal, deps.signal]) : controller.signal;
   try {
-    const res = await Promise.race([deps.fetch(input.uri, {signal: controller.signal}), aborted]);
+    if (deps.signal?.aborted) throw deps.signal.reason ?? new DOMException('Aborted', 'AbortError');
+    const res = await Promise.race([deps.fetch(input.uri, {signal: fetchSignal}), aborted]);
     if (!res.ok) {
       void res.body?.cancel().catch(() => {});
       throw new IngestError(`HTTP ${res.status}`);
@@ -186,6 +189,7 @@ export async function ingestSource(projectDir: string, input: IngestInput, deps:
     text = normalizeText(r.text);
     if (r.title && !input.title) entry.title = r.title;
   } catch (e) {
+    if (deps.signal?.aborted) throw e;
     entry.error = e instanceof IngestError ? e.message : e instanceof Error ? e.message || e.name : String(e);
     text = '';
   }

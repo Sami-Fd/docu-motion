@@ -10,7 +10,7 @@ export type StepContext = {
   fetch: typeof fetch;
   signal?: AbortSignal;
   onProgress: (e: {step: StepName; ratio?: number; log?: string}) => void;
-  nativeSearch?: (query: string) => Promise<SearchHit[]>;
+  nativeSearch?: (query: string, signal?: AbortSignal) => Promise<SearchHit[]>;
 };
 
 export type Step = (p: Project, ctx: StepContext) => Promise<Project>;
