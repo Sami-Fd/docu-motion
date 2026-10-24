@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "brief": {
+    "topic": "La Sécurité sociale, qui paie quoi ?",
+    "language": "fr",
+    "targetMinutes": 2,
+    "style": "papier",
+    "provider": {
+      "kind": "fake",
+      "provider": "fake"
+    },
+    "webSearch": "off"
+  },
+  "sources": [],
+  "facts": [],
+  "scenes": [
+    {
+      "id": "01-titre",
+      "narration": "La Sécurité sociale, qui paie quoi ? Comment ça marche, et surtout, où va-t-on ? Voyons cela en deux minutes.",
+      "spec": {
+        "type": "title",
+        "title": "La Sécu, qui paie quoi ?",
+        "subtitle": "Comprendre le financement en deux minutes",
+        "decor": "hills",
+        "characters": 3
+      },
+      "status": "ok",
+      "durationFrames": 295
+    },
+    {
+      "id": "02-1945",
+      "narration": "Tout commence en 1945. Au sortir de la guerre, la France crée la Sécurité sociale. L'idée est simple : chacun cotise selon ses moyens, et reçoit selon ses besoins.",
+      "spec": {
+        "type": "quote",
+        "title": "Un principe fondateur",
+        "text": "Chacun cotise selon ses moyens et reçoit selon ses besoins.",
+        "author": "Principe de la Sécurité sociale"
+      },
+      "status": "ok",
+      "durationFrames": 408
+    },
+    {
+      "id": "03-dates",
+      "narration": "Depuis 1945, le système a beaucoup évolué. En 1967, les branches sont séparées. En 1991, la CSG est créée. En 2004, une grande réforme de l'assurance maladie voit le jour.",
+      "spec": {
+        "type": "timeline",
+        "title": "Les grandes dates",
+        "events": [
+          {
+            "date": "1945",
+            "label": "Création de la Sécu",
+            "cue": "1945"
+          },
+          {
+            "date": "1967",
+            "label": "Séparation des branches",
+            "cue": "1967"
+          },
+          {
+            "date": "1991",
+            "label": "Création de la CSG",
+            "cue": "1991"
+          },
+          {
+            "date": "2004",
+            "label": "Réforme de l’assurance",
+            "cue": "2004"
+          }
+        ]
+      },
+      "status": "ok",
+      "durationFrames": 420
+    },
+    {
+      "id": "04-branches",
+      "narration": "Que paie la Sécu ? D'abord la maladie, avec environ 250 milliards d'euros. Puis les retraites, plus de 340 milliards. Ensuite la famille, et enfin les accidents du travail.",
+      "spec": {
+        "type": "bars",
+        "title": "Dépenses par branche",
+        "bars": [
+          {
+            "label": "Maladie",
+            "value": 250,
+            "cue": "maladie"
+          },
+          {
+            "label": "Retraites",
+            "value": 340,
+            "cue": "retraites"
+          },
+          {
+            "label": "Famille",
+            "value": 55,
+            "cue": "famille"
+          },
+          {
+            "label": "Accidents",
+            "value": 15,
+            "cue": "accidents"
+          }
+        ],
+        "unit": "Md€",
+        "source": "Commission des comptes de la Sécurité sociale"
+      },
+      "status": "ok",
+      "durationFrames": 408
+    },
+    {
+      "id": "05-financement",
+      "narration": "Et qui finance tout cela ? Surtout les cotisations sociales, pour près de la moitié. Viennent ensuite la CSG, les autres impôts, la TVA et quelques autres recettes.",
+      "spec": {
+        "type": "donut",
+        "title": "Le financement de la Sécu",
+        "parts": [
+          {
+            "label": "Cotisations sociales",
+            "value": 49,
+            "cue": "cotisations"
+          },
+          {
+            "label": "CSG",
+            "value": 20,
+            "cue": "CSG"
+          },
+          {
+            "label": "Autres impôts et taxes",
+            "value": 13,
+            "cue": "autres impôts"
+          },
+          {
+            "label": "TVA",
+            "value": 8,
+            "cue": "TVA"
+          },
+          {
+            "label": "Autres recettes",
+            "value": 10,
+            "cue": "recettes"
+          }
+        ]
+      },
+      "status": "ok",
+      "durationFrames": 396
+    },
+    {
+      "id": "06-deficit",
+      "narration": "Mais les comptes sont dans le rouge. Cette année, le déficit prévu atteint dix-huit milliards et demi d'euros. Et il pourrait encore se creuser dans les prochaines années.",
+      "spec": {
+        "type": "counter",
+        "title": "Un déficit qui se creuse",
+        "value": 18.5,
+        "suffix": "Md€",
+        "label": "de déficit prévu cette année",
+        "cue": "déficit"
+      },
+      "status": "ok",
+      "durationFrames": 396
+    },
+    {
+      "id": "07-vieillissement",
+      "narration": "Une des raisons, c'est le vieillissement. Aujourd'hui, on compte 2,5 actifs pour chaque senior. En 2070, il n'y en aura plus que 1,6. Moins de cotisants, plus de retraités.",
+      "spec": {
+        "type": "pictograms",
+        "title": "La population vieillit",
+        "groups": [
+          {
+            "label": "Aujourd'hui",
+            "count": 7,
+            "elderly": false,
+            "ratio": "2,5",
+            "cue": "Aujourd'hui"
+          },
+          {
+            "label": "En 2070",
+            "count": 12,
+            "elderly": true,
+            "ratio": "1,6",
+            "cue": "2070"
+          }
+        ],
+        "source": "COR, rapport annuel 2026 (20-64 ans / 65 ans et plus)"
+      },
+      "status": "ok",
+      "durationFrames": 408
+    },
+    {
+      "id": "08-ratio",
+      "narration": "Concrètement, aujourd'hui, deux actifs et demi financent un senior. En 2070, ils ne seront plus que 1,6 pour un senior. La charge devient bien plus lourde pour chacun.",
+      "spec": {
+        "type": "comparison",
+        "title": "Hier contre demain",
+        "left": {
+          "heading": "Aujourd'hui",
+          "value": "2,5",
+          "caption": "actifs pour 1 senior",
+          "cue": "Aujourd'hui"
+        },
+        "right": {
+          "heading": "En 2070",
+          "value": "1,6",
+          "caption": "actifs pour 1 senior",
+          "cue": "2070"
+        }
+      },
+      "status": "ok",
+      "durationFrames": 396
+    },
+    {
+      "id": "09-leviers",
+      "narration": "Alors, que faire ? Il existe trois leviers possibles. On peut augmenter les recettes, réduire certaines dépenses, ou allonger la durée de cotisation.",
+      "spec": {
+        "type": "list",
+        "title": "Les leviers possibles",
+        "items": [
+          {
+            "text": "Augmenter les recettes",
+            "icon": "coin",
+            "cue": "recettes"
+          },
+          {
+            "text": "Réduire certaines dépenses",
+            "icon": "drop",
+            "cue": "dépenses"
+          },
+          {
+            "text": "Allonger la durée de cotisation",
+            "icon": "sun",
+            "cue": "cotisation"
+          }
+        ]
+      },
+      "status": "ok",
+      "durationFrames": 333
+    },
+    {
+      "id": "10-fin",
+      "narration": "La Sécu reste un pilier de notre société. Son avenir dépend de choix collectifs : à chacun de se faire sa propre opinion. Merci d'avoir suivi ce film jusqu'au bout.",
+      "spec": {
+        "type": "quote",
+        "title": "À retenir",
+        "text": "Un système solidaire, mais qu'il faut financer ensemble.",
+        "author": "Conclusion"
+      },
+      "status": "ok",
+      "durationFrames": 420
+    }
+  ],
+  "voice": {
+    "engine": "none"
+  }
+}

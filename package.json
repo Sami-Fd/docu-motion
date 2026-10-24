@@ -9,6 +9,7 @@
     "test": "vitest run --project unit",
     "test:visual": "vitest run --project visual --passWithNoTests",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "render": "tsx --tsconfig tsconfig.base.json scripts/render-project.ts",
     "sheet": "tsx --tsconfig tsconfig.base.json scripts/contact-sheet.ts"
   },
   "devDependencies": {
