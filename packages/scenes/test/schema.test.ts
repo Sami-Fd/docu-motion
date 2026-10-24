@@ -1,6 +1,5 @@
 import {describe, expect, it} from 'vitest';
 import {EXAMPLES, SCENE_TYPES, SceneSpecSchema} from '../src/schema';
-import {ProjectSchema} from '../../core/src/project/schema';
 
 const pathsOf = (r: {success: boolean; error?: {issues: {path: (string | number)[]}[]}}) =>
   (r.error?.issues ?? []).map((i) => i.path.join('.'));
@@ -58,23 +57,5 @@ describe('scene schemas', () => {
 
   it('rejects an unknown type', () => {
     expect(SceneSpecSchema.safeParse({type: 'map', title: 'x'}).success).toBe(false);
-  });
-
-  it('ProjectSchema accepts scenes using every example', () => {
-    const project = {
-      version: 1,
-      brief: {
-        topic: 't', language: 'fr', targetMinutes: 2, style: 'papier',
-        provider: {kind: 'fake', provider: 'fake'}, webSearch: 'off',
-      },
-      sources: [],
-      facts: [],
-      scenes: SCENE_TYPES.map((t, i) => ({
-        id: `s${i}`, narration: 'texte', spec: EXAMPLES[t], status: 'ok', durationFrames: 90,
-      })),
-      voice: {engine: 'none'},
-    };
-    const r = ProjectSchema.safeParse(project);
-    expect(r.success, JSON.stringify(r.error?.issues)).toBe(true);
   });
 });

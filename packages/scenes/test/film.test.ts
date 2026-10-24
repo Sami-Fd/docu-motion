@@ -40,6 +40,10 @@ describe('audioUrl', () => {
   it('joins assetBase and path otherwise', () => {
     expect(audioUrl('http://localhost:3000/assets', 'voix/a.mp3')).toBe('http://localhost:3000/assets/voix/a.mp3');
   });
+  it('tolerates "./" and backslashes, and encodes segments without staticFile', () => {
+    expect(audioUrl(null, './voix\\a.mp3')).toBe(staticFile('voix/a.mp3'));
+    expect(audioUrl('http://h/assets', 'ma voix/é.mp3')).toBe('http://h/assets/ma%20voix/%C3%A9.mp3');
+  });
 });
 
 describe('fadeOpacity', () => {

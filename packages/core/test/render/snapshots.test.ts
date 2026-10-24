@@ -8,7 +8,7 @@ import pixelmatch from 'pixelmatch';
 import {renderStill, selectComposition} from '@remotion/renderer';
 import {SCENE_TYPES, type SceneType, type StyleName} from '@docu-motion/scenes';
 import {renderSceneStill} from '../../src/render/render.js';
-import {bundleScenes} from '../../src/render/bundle.js';
+import {bundleScenes, invalidateBundle} from '../../src/render/bundle.js';
 import {exampleProject} from './exampleProject.js';
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./__snapshots__/', import.meta.url));
@@ -57,6 +57,7 @@ beforeAll(async () => {
   await fs.mkdir(projectDir, {recursive: true});
 });
 afterAll(async () => {
+  invalidateBundle(projectDir); // the temp project goes away, so does its bundle
   await fs.rm(root, {recursive: true, force: true});
 });
 

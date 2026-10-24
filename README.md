@@ -7,7 +7,7 @@ A self-hosted app that turns a topic into a coded motion-design documentary vide
 ## Requirements
 
 - Node.js 20 or newer
-- The first render downloads Chrome Headless Shell (handled by Remotion, needs network access once)
+- Network access when rendering: the first render downloads Chrome Headless Shell (handled by Remotion), and every render fetches the Google fonts from fonts.gstatic.com
 
 ## Quick start
 
@@ -42,3 +42,5 @@ npm run typecheck
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+Remotion, which this project depends on, has its own license, separate from this repository's MIT license: https://www.remotion.dev/license

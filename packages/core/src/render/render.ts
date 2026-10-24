@@ -3,7 +3,7 @@ import path from 'node:path';
 import {makeCancelSignal, renderMedia, renderStill, selectComposition} from '@remotion/renderer';
 import type {Project} from '../project/schema.js';
 import {bundleScenes} from './bundle.js';
-import {toFilmInput} from './toFilmInput.js';
+import {filmAssets, toFilmInput} from './toFilmInput.js';
 
 export async function renderSceneStill(
   projectDir: string,
@@ -13,8 +13,9 @@ export async function renderSceneStill(
 ): Promise<string> {
   const scene = p.scenes[sceneIndex];
   if (!scene) throw new Error(`Scene index ${sceneIndex} is out of range (${p.scenes.length} scenes)`);
-  const serveUrl = await bundleScenes(projectDir);
-  const inputProps = {...toFilmInput(p, projectDir, null), sceneIndex};
+  const film = toFilmInput(p, projectDir, null);
+  const serveUrl = await bundleScenes(projectDir, filmAssets(film));
+  const inputProps = {...film, sceneIndex};
   const composition = await selectComposition({serveUrl, id: 'SceneStill', inputProps});
   const frame = Math.floor(atRatio * (composition.durationInFrames - 1));
   const output = path.join(projectDir, 'out', 'stills', `${scene.id}.png`);
@@ -34,9 +35,9 @@ export async function renderVideo(
   const {cancelSignal, cancel} = makeCancelSignal();
   signal?.addEventListener('abort', cancel, {once: true});
   try {
-    const serveUrl = await bundleScenes(projectDir);
-    if (signal?.aborted) throw cancelled();
     const inputProps = toFilmInput(p, projectDir, null);
+    const serveUrl = await bundleScenes(projectDir, filmAssets(inputProps));
+    if (signal?.aborted) throw cancelled();
     const composition = await selectComposition({serveUrl, id: 'Film', inputProps});
     const output = path.join(projectDir, 'out', 'video.mp4');
     await fs.mkdir(path.dirname(output), {recursive: true});

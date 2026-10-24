@@ -14,8 +14,17 @@ export const calculateFilmMetadata: CalculateMetadataFunction<FilmInput> = async
   durationInFrames: Math.max(1, props.scenes.reduce((a, s) => a + clampFrames(s.durationFrames), 0)),
 });
 
-export const audioUrl = (assetBase: string | null, audioPath: string): string =>
-  assetBase === null ? staticFile(audioPath) : `${assetBase}/${audioPath}`;
+/**
+ * URL of a scene's audio. `audioPath` is expected to be a clean project-relative POSIX path (core
+ * normalises it); `\` separators and a leading "./" are still tolerated here since staticFile()
+ * throws on "./" and would encode `\` as %5C. Without staticFile, each segment is URL-encoded.
+ */
+export const audioUrl = (assetBase: string | null, audioPath: string): string => {
+  const clean = audioPath.replace(/\\/g, '/').replace(/^(\.\/)+/, '');
+  return assetBase === null
+    ? staticFile(clean)
+    : `${assetBase}/${clean.split('/').map(encodeURIComponent).join('/')}`;
+};
 
 const Fade: React.FC<{durationFrames: number; children: React.ReactNode}> = ({durationFrames, children}) => {
   const frame = useCurrentFrame();

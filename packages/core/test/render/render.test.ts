@@ -7,7 +7,7 @@ import {PNG} from 'pngjs';
 import {EXAMPLES, durationFromAudio} from '@docu-motion/scenes';
 import {saveProject, loadProject, type Project} from '../../src/index.js';
 import {renderSceneStill, renderVideo} from '../../src/render/render.js';
-import {invalidateBundle} from '../../src/render/bundle.js';
+import {bundleDirOf, invalidateBundle} from '../../src/render/bundle.js';
 import {probeMedia} from '../../src/render/probe.js';
 
 const TONE = fileURLToPath(new URL('../fixtures/tone.mp3', import.meta.url));
@@ -33,9 +33,11 @@ const baseProject = (): Project => ({
 });
 
 let root: string;
+const dirs: string[] = [];
 const freshDir = async (name: string): Promise<string> => {
   const dir = path.join(root, name, 'mon projet é');
   await fs.mkdir(dir, {recursive: true});
+  dirs.push(dir);
   return dir;
 };
 
@@ -43,6 +45,7 @@ beforeAll(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'docu-motion-render-'));
 });
 afterAll(async () => {
+  dirs.forEach(invalidateBundle); // the temp projects go away, so do their bundles
   await fs.rm(root, {recursive: true, force: true});
 });
 
@@ -116,5 +119,11 @@ describe('render', () => {
     invalidateBundle(dir);
     const info = await probeMedia(await renderVideo(dir, p));
     expect(info.hasAudio).toBe(true);
+    // The bundle's public dir holds only the referenced audio, not the project's out/ (stills, video).
+    const bundlePublic = path.join(bundleDirOf(dir), 'bundle', 'public');
+    expect(await fs.readdir(bundlePublic)).toEqual(['voice']);
+    expect(await fs.readdir(path.join(bundlePublic, 'voice'))).toEqual(['s0.mp3']);
+    invalidateBundle(dir);
+    await expect(fs.access(bundleDirOf(dir))).rejects.toThrow();
   }, 180_000);
 });

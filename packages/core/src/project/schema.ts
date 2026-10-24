@@ -13,6 +13,29 @@ export const ProviderRefSchema = z.object({
 });
 export type ProviderRef = z.infer<typeof ProviderRefSchema>;
 
+/** A scene id names its still (out/stills/<id>.png) and is a React key, hence the narrow alphabet. */
+export const SceneIdSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+    'Scene id must be 1-64 characters: letters, digits, "_" or "-", starting with a letter or digit',
+  );
+
+const uniqueSceneIds = (scenes: {id: string}[], ctx: z.RefinementCtx): void => {
+  const first = new Map<string, number>();
+  scenes.forEach((s, i) => {
+    const seen = first.get(s.id);
+    if (seen === undefined) first.set(s.id, i);
+    else {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [i, 'id'],
+        message: `Duplicate scene id "${s.id}" (already used by scene ${seen})`,
+      });
+    }
+  });
+};
+
 export const ProjectSchema = z.object({
   version: z.literal(PROJECT_VERSION),
   brief: z.object({
@@ -44,16 +67,18 @@ export const ProjectSchema = z.object({
       verified: z.boolean(),
     }),
   ),
-  scenes: z.array(
-    z.object({
-      id: z.string(),
-      narration: z.string(),
-      spec: SceneSpecSchema,
-      status: z.enum(['ok', 'fallback', 'review']),
-      audio: z.object({path: z.string(), seconds: z.number()}).optional(),
-      durationFrames: z.number(),
-    }),
-  ),
+  scenes: z
+    .array(
+      z.object({
+        id: SceneIdSchema,
+        narration: z.string(),
+        spec: SceneSpecSchema,
+        status: z.enum(['ok', 'fallback', 'review']),
+        audio: z.object({path: z.string(), seconds: z.number()}).optional(),
+        durationFrames: z.number().int().positive(),
+      }),
+    )
+    .superRefine(uniqueSceneIds),
   voice: z.object({
     engine: z.enum(['edge', 'elevenlabs', 'openai', 'upload', 'none']),
     voiceId: z.string().optional(),

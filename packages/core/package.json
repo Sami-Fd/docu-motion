@@ -12,6 +12,7 @@
   "dependencies": {
     "@docu-motion/scenes": "*",
     "@remotion/bundler": "4.0.538",
+    "@remotion/cli": "4.0.538",
     "@remotion/renderer": "4.0.538",
     "zod": "3.25.76"
   },

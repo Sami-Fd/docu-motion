@@ -72,6 +72,18 @@ describe('project store', () => {
     expect(err.message).toContain(file());
   });
 
+  it('reports malformed JSON naming the file and leaves it untouched', async () => {
+    const bytes = '{"version": 1, "brief": ';
+    await fs.writeFile(file(), bytes);
+    const err = await loadProject(dir).catch((e) => e);
+    expect(err).toBeInstanceOf(ProjectLoadError);
+    expect(err.file).toBe(file());
+    expect(err.message).toContain(file());
+    expect(err.issues[0].message).toMatch(/^Not valid JSON/);
+    expect(await fs.readFile(file(), 'utf8')).toBe(bytes);
+    await expect(fs.access(file() + '.bak')).rejects.toThrow();
+  });
+
   it('does not touch an invalid file', async () => {
     const bytes = JSON.stringify({...makeProject(), version: 2});
     await fs.writeFile(file(), bytes);
