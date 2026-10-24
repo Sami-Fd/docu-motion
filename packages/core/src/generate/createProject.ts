@@ -15,6 +15,7 @@ export type NewProjectInput = {
 };
 
 const MAX_SLUG = 32;
+const DIR_SLUG = 26;
 
 export function slugify(topic: string): string {
   let s = topic
@@ -47,7 +48,8 @@ async function isFile(p: string): Promise<boolean> {
 }
 
 export async function createProject(dataDir: string, input: NewProjectInput, now: Date = new Date()): Promise<string> {
-  const base = `${slugify(input.topic)}-${stampOf(now)}`;
+  // Folder name stays <= 48 chars even with a collision suffix: 26 + 1 + 15 + up to "-99999".
+  const base = `${slugify(input.topic).slice(0, DIR_SLUG).replace(/-+$/g, '')}-${stampOf(now)}`;
   const projects = path.join(dataDir, 'projects');
   await fs.mkdir(projects, {recursive: true});
   let dir = '';
@@ -69,13 +71,14 @@ export async function createProject(dataDir: string, input: NewProjectInput, now
       continue;
     }
     let name = path.basename(src);
-    if (taken.has(name)) {
+    if (taken.has(name.toLowerCase())) {
       const ext = path.extname(name);
+      const stem = path.basename(name, ext);
       let i = 2;
-      while (taken.has(`${path.basename(name, ext)}-${i}${ext}`)) i++;
-      name = `${path.basename(name, ext)}-${i}${ext}`;
+      while (taken.has(`${stem}-${i}${ext}`.toLowerCase())) i++;
+      name = `${stem}-${i}${ext}`;
     }
-    taken.add(name);
+    taken.add(name.toLowerCase());
     await fs.mkdir(path.join(dir, 'sources', 'upload'), {recursive: true});
     await fs.copyFile(src, path.join(dir, 'sources', 'upload', name));
     sources.push(`sources/upload/${name}`);

@@ -56,6 +56,8 @@ describe('createProject', () => {
     const b = await createProject(tmp, input(), now);
     expect(a).not.toBe(b);
     expect(path.basename(b)).toMatch(/-2$/);
+    expect(path.basename(a).length).toBeLessThanOrEqual(48);
+    expect(path.basename(b).length).toBeLessThanOrEqual(48);
   });
 
   it('copies local files and keeps URLs', async () => {
@@ -65,5 +67,27 @@ describe('createProject', () => {
     const p = await loadProject(dir);
     expect(p.brief.sources).toEqual(['sources/upload/note é.txt', 'https://example.com/a']);
     expect(await fs.readFile(path.join(dir, 'sources/upload/note é.txt'), 'utf8')).toBe('hello');
+  });
+
+  it('keeps long-topic folder names within 48 chars including suffix', async () => {
+    const long = {...input(), topic: 'a'.repeat(200)};
+    await createProject(tmp, long, now);
+    const b = await createProject(tmp, long, now);
+    expect(path.basename(b).length).toBeLessThanOrEqual(48);
+    expect(path.basename(b)).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  it('renames case-insensitive duplicate basenames', async () => {
+    await fs.mkdir(path.join(tmp, 'x'));
+    await fs.mkdir(path.join(tmp, 'y'));
+    const a = path.join(tmp, 'x', 'A.txt');
+    const b = path.join(tmp, 'y', 'a.txt');
+    await fs.writeFile(a, 'one');
+    await fs.writeFile(b, 'two');
+    const dir = await createProject(tmp, input([a, b]), now);
+    const p = await loadProject(dir);
+    expect(p.brief.sources).toEqual(['sources/upload/A.txt', 'sources/upload/a-2.txt']);
+    expect(await fs.readFile(path.join(dir, 'sources/upload/A.txt'), 'utf8')).toBe('one');
+    expect(await fs.readFile(path.join(dir, 'sources/upload/a-2.txt'), 'utf8')).toBe('two');
   });
 });
