@@ -13,9 +13,9 @@ A self-hosted app that turns a topic into a coded motion-design documentary vide
 
 ```bash
 npm install
-npm run render -- examples/secu              # writes examples/secu/out/video.mp4
-npm run render -- examples/secu --style nuit # override the style (project.json is not modified)
-npm run sheet -- examples/secu               # contact sheet of every scene: examples/secu/out/contact-sheet.png
+npm run render -- examples/how-it-works              # writes examples/how-it-works/out/video.mp4
+npm run render -- examples/how-it-works --style nuit # override the style (project.json is not modified)
+npm run sheet -- examples/how-it-works               # contact sheet of every scene: examples/how-it-works/out/contact-sheet.png
 ```
 
 Styles: `papier` (default), `craie`, `infographie`, `nuit`. A successful render prints `OK <path> <duration>s audio=<bool>`; an invalid `project.json` prints each problem as `<json path>: <message>` and exits with code 1.
@@ -32,7 +32,7 @@ npm run typecheck
 
 - `packages/scenes`: Remotion compositions and the nine scene types (title, bars, donut, counter, pictograms, comparison, quote, timeline, list)
 - `packages/core`: `project.json` schema and store, bundling, still/video rendering, media probing
-- `examples/secu`: demo project (10 scenes, no voice-over)
+- `examples/how-it-works`: demo project, a 10-scene video explaining how docu-motion works (no voice-over)
 
 ## Related
 

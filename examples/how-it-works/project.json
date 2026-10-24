@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "brief": {
+    "topic": "How docu-motion turns a topic into a video",
+    "language": "en",
+    "targetMinutes": 2,
+    "style": "papier",
+    "provider": {
+      "kind": "fake",
+      "provider": "fake"
+    },
+    "webSearch": "off"
+  },
+  "sources": [],
+  "facts": [],
+  "scenes": [
+    {
+      "id": "s01",
+      "narration": "What if a video could start from a single idea? Docu-motion takes a topic and builds a complete documentary, from research to final render. Here is how it works, step by step, in about two minutes.",
+      "spec": {
+        "type": "title",
+        "title": "From topic to video",
+        "subtitle": "How docu-motion builds a documentary",
+        "decor": "hills",
+        "characters": 3
+      },
+      "status": "ok",
+      "durationFrames": 495
+    },
+    {
+      "id": "s02",
+      "narration": "You only need to provide three things. First, a topic, which is the question your video answers. Second, a visual style. And third, if you like, your own sources, such as web pages or documents.",
+      "spec": {
+        "type": "list",
+        "title": "What you give it",
+        "items": [
+          {
+            "text": "A topic",
+            "icon": "character",
+            "cue": "topic"
+          },
+          {
+            "text": "A visual style",
+            "icon": "sun",
+            "cue": "style"
+          },
+          {
+            "text": "Optional sources",
+            "icon": "cloud",
+            "cue": "sources"
+          }
+        ]
+      },
+      "status": "ok",
+      "durationFrames": 483
+    },
+    {
+      "id": "s03",
+      "narration": "Then the pipeline runs in six steps. It gathers sources, extracts facts, writes a script, builds the scenes, adds a voice, and finally renders the video. Each step feeds the next one.",
+      "spec": {
+        "type": "timeline",
+        "title": "The six-step pipeline",
+        "events": [
+          {
+            "date": "Step 1",
+            "label": "Gather sources",
+            "cue": "gathers sources"
+          },
+          {
+            "date": "Step 2",
+            "label": "Extract key facts",
+            "cue": "extracts facts"
+          },
+          {
+            "date": "Step 3",
+            "label": "Write the script",
+            "cue": "writes a script"
+          },
+          {
+            "date": "Step 4",
+            "label": "Build the scenes",
+            "cue": "builds the scenes"
+          },
+          {
+            "date": "Step 5",
+            "label": "Add a voice",
+            "cue": "adds a voice"
+          },
+          {
+            "date": "Step 6",
+            "label": "Render the video",
+            "cue": "renders the video"
+          }
+        ]
+      },
+      "status": "ok",
+      "durationFrames": 445
+    },
+    {
+      "id": "s04",
+      "narration": "Take a typical run. The research step might find around five sources. From those pages, the app then extracts about twelve distinct facts, each one tied back to the passage it came from.",
+      "spec": {
+        "type": "pictograms",
+        "title": "From sources to facts",
+        "groups": [
+          {
+            "label": "Sources found",
+            "count": 5,
+            "elderly": false,
+            "cue": "five sources"
+          },
+          {
+            "label": "Facts extracted",
+            "count": 12,
+            "elderly": false,
+            "cue": "twelve distinct facts"
+          }
+        ],
+        "source": "docu-motion"
+      },
+      "status": "ok",
+      "durationFrames": 458
+    },
+    {
+      "id": "s05",
+      "narration": "Trust is built in from the start. The golden rule of the app is simple: nothing appears on screen without evidence. A number either points to a source, or it is clearly marked as unverified.",
+      "spec": {
+        "type": "quote",
+        "title": "A rule about facts",
+        "text": "Every figure on screen is traceable to a source, or marked unverified.",
+        "author": "docu-motion design principle"
+      },
+      "status": "ok",
+      "durationFrames": 483
+    },
+    {
+      "id": "s06",
+      "narration": "The length of your video sets the number of scenes. A one minute video gets eight scenes. Three minutes gets eleven. And anything from four minutes up is capped at twelve scenes.",
+      "spec": {
+        "type": "bars",
+        "title": "Scenes by video length",
+        "bars": [
+          {
+            "label": "1 min",
+            "value": 8,
+            "cue": "one minute"
+          },
+          {
+            "label": "3 min",
+            "value": 11,
+            "cue": "three minutes"
+          },
+          {
+            "label": "4+ min",
+            "value": 12,
+            "cue": "four minutes"
+          }
+        ],
+        "unit": "scenes",
+        "source": "docu-motion"
+      },
+      "status": "ok",
+      "durationFrames": 445
+    },
+    {
+      "id": "s07",
+      "narration": "For each scene, the script picks the best way to show it. There are nine scene types to choose from, covering titles, lists, charts, quotes, and more, so that no two scenes look the same.",
+      "spec": {
+        "type": "counter",
+        "title": "A toolbox of scene types",
+        "value": 9,
+        "label": "scene types to choose from",
+        "cue": "nine scene types",
+        "source": "docu-motion"
+      },
+      "status": "ok",
+      "durationFrames": 483
+    },
+    {
+      "id": "s08",
+      "narration": "This very video is a good example. Lists appear twice, making up a fifth of the scenes. The title and the quote share another fifth, charts take thirty percent, and the remaining thirty percent is split between the timeline, the pictograms and the comparison.",
+      "spec": {
+        "type": "donut",
+        "title": "Scene types in this video",
+        "parts": [
+          {
+            "label": "Lists",
+            "value": 20,
+            "cue": "lists"
+          },
+          {
+            "label": "Title and quote",
+            "value": 20,
+            "cue": "title and the quote"
+          },
+          {
+            "label": "Bars, donut, counter",
+            "value": 30,
+            "cue": "charts"
+          },
+          {
+            "label": "Timeline, pictograms, more",
+            "value": 30,
+            "cue": "timeline"
+          }
+        ],
+        "source": "docu-motion"
+      },
+      "status": "ok",
+      "durationFrames": 596
+    },
+    {
+      "id": "s09",
+      "narration": "Finally, the output. The video is rendered in full high definition, at nineteen twenty by ten eighty. A separate thumbnail is also produced in a smaller size, ready to upload to YouTube.",
+      "spec": {
+        "type": "comparison",
+        "title": "Video and thumbnail sizes",
+        "left": {
+          "heading": "Video",
+          "value": "1920×1080",
+          "caption": "30 frames per second",
+          "cue": "nineteen twenty"
+        },
+        "right": {
+          "heading": "Thumbnail",
+          "value": "1280×720",
+          "caption": "for YouTube",
+          "cue": "thumbnail"
+        },
+        "source": "docu-motion"
+      },
+      "status": "ok",
+      "durationFrames": 445
+    },
+    {
+      "id": "s10",
+      "narration": "And you decide how it looks. Papier feels like a sketchbook. Craie looks like chalk on a blackboard. Infographie is clean and bold. And nuit is a dark theme made for evening viewing.",
+      "spec": {
+        "type": "list",
+        "title": "Four visual styles",
+        "items": [
+          {
+            "text": "papier: a warm, hand-drawn sketchbook look",
+            "icon": "sun",
+            "cue": "papier"
+          },
+          {
+            "text": "craie: chalk on a classroom blackboard",
+            "icon": "none",
+            "cue": "craie"
+          },
+          {
+            "text": "infographie: clean, bold and colourful",
+            "icon": "coin",
+            "cue": "infographie"
+          },
+          {
+            "text": "nuit: a dark theme for evening viewing",
+            "icon": "cloud",
+            "cue": "nuit"
+          }
+        ]
+      },
+      "status": "ok",
+      "durationFrames": 458
+    }
+  ],
+  "voice": {
+    "engine": "none"
+  }
+}

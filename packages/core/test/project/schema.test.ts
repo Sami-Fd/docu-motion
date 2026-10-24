@@ -36,7 +36,7 @@ describe('ProjectSchema', () => {
   });
 
   it('accepts the demo project', () => {
-    const file = fileURLToPath(new URL('../../../../examples/secu/project.json', import.meta.url));
+    const file = fileURLToPath(new URL('../../../../examples/how-it-works/project.json', import.meta.url));
     const r = ProjectSchema.safeParse(JSON.parse(readFileSync(file, 'utf8')));
     expect(r.success, JSON.stringify(r.error?.issues)).toBe(true);
   });

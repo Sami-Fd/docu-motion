@@ -8,7 +8,7 @@ import {estimateDurationFrames} from '@docu-motion/scenes';
 import {loadProject} from '../../src/index.js';
 
 const REPO = fileURLToPath(new URL('../../../../', import.meta.url));
-const DEMO = path.join(REPO, 'examples', 'secu');
+const DEMO = path.join(REPO, 'examples', 'how-it-works');
 
 const runScript = (args: string[]): Promise<{code: number | null; stdout: string; stderr: string}> =>
   new Promise((resolve, reject) => {
