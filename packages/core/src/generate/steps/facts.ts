@@ -58,8 +58,10 @@ export const factsStep: Step = async (p, ctx) => {
   });
   const byId = new Map(usable.map((s) => [s.id, s.text]));
   const facts = out.facts.map((f, i) => {
-    const sourceText = f.sourceId ? byId.get(f.sourceId) : undefined;
-    const verified = !fromKnowledge && sourceText !== undefined && !!f.excerpt && excerptFound(f.excerpt, sourceText);
+    const sourceText = !fromKnowledge && f.sourceId ? byId.get(f.sourceId) : undefined;
+    // A citation that does not resolve to a source we sent is dropped, not stored.
+    if (sourceText === undefined) return {id: `f${i + 1}`, statement: f.statement, value: f.value, verified: false};
+    const verified = !!f.excerpt && excerptFound(f.excerpt, sourceText);
     return {id: `f${i + 1}`, statement: f.statement, value: f.value, sourceId: f.sourceId, excerpt: f.excerpt, verified};
   });
   ctx.onProgress({step: 'facts', log: `${facts.length} facts (${facts.filter((f) => f.verified).length} verified)`});

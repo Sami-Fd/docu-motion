@@ -85,10 +85,54 @@ describe('factsStep', () => {
     expect(prompt).not.toMatch(/mo\b(?!t)/);
   });
 
-  it('passes the abort signal to the LLM', async () => {
+  it('passes ctx.signal to the LLM call', async () => {
+    const {dir, ctx} = setup(() => ({facts: [1, 2, 3].map((i) => ({statement: `F${i}`}))}));
+    write(dir, 's1', 'some source text');
+    const seen: (AbortSignal | undefined)[] = [];
+    const llm = {...ctx.llm, generateObject: ((args: {signal?: AbortSignal}) => (seen.push(args.signal), ctx.llm.generateObject(args as never))) as typeof ctx.llm.generateObject};
+    const signal = new AbortController().signal;
+    await factsStep(project([src('s1')]), {...ctx, llm, signal});
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(signal);
+  });
+
+  it('rejects when already aborted', async () => {
     const {ctx} = setup(() => ({facts: []}));
     const ac = new AbortController();
     ac.abort();
     await expect(factsStep(project(), {...ctx, signal: ac.signal})).rejects.toBeDefined();
+  });
+
+  it('drops citations that do not resolve to a sent source', async () => {
+    const {dir, ctx} = setup(() => ({
+      facts: [
+        {statement: 'A', sourceId: 's1', excerpt: 'la CSG finance 20 %'},
+        {statement: 'B', sourceId: 's9', excerpt: 'la CSG finance 20 %'},
+        {statement: 'C', sourceId: 's1', excerpt: 'invented excerpt text here'},
+      ],
+    }));
+    write(dir, 's1', 'la CSG finance 20 % des recettes');
+    const out = await factsStep(project([src('s1')]), ctx);
+    expect(out.facts[0]).toMatchObject({sourceId: 's1', verified: true});
+    expect(out.facts[1]).not.toHaveProperty('sourceId');
+    expect(out.facts[1]).not.toHaveProperty('excerpt');
+    expect(out.facts[2]).toMatchObject({sourceId: 's1', verified: false});
+  });
+
+  it('drops citations in knowledge mode', async () => {
+    const {ctx} = setup(() => ({facts: [1, 2, 3].map((i) => ({statement: `F${i}`, sourceId: 's1', excerpt: 'some long excerpt text'}))}));
+    const out = await factsStep(project(), ctx);
+    for (const f of out.facts) {
+      expect(f.sourceId).toBeUndefined();
+      expect(f.excerpt).toBeUndefined();
+    }
+  });
+
+  it('replaces existing facts on rerun', async () => {
+    const {ctx} = setup(() => ({facts: [1, 2, 3].map((i) => ({statement: `New${i}`}))}));
+    const old = [1, 2, 3, 4].map((i) => ({id: `f${i}`, statement: `Old${i}`, verified: true}));
+    const out = await factsStep({...project(), facts: old}, ctx);
+    expect(out.facts.map((f) => f.statement)).toEqual(['New1', 'New2', 'New3']);
+    expect(out.facts.map((f) => f.id)).toEqual(['f1', 'f2', 'f3']);
   });
 });
