@@ -23,14 +23,6 @@ const DEFAULT_MAX_BYTES = 5_000_000;
 
 class IngestError extends Error {}
 
-// The pdf.js bundle in unpdf references the Iterator global (Node >= 22). Stub it on older runtimes.
-if (typeof (globalThis as {Iterator?: unknown}).Iterator === 'undefined') {
-  const proto = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
-  const Iter = function Iterator() {} as unknown as {prototype: unknown};
-  Iter.prototype = proto;
-  (globalThis as {Iterator?: unknown}).Iterator = Iter;
-}
-
 /** Collapse whitespace; paragraphs (blank-line separated) stay separated by a blank line. */
 export function normalizeText(raw: string): string {
   return raw
@@ -59,6 +51,21 @@ function htmlToText(html: string): {title?: string; text: string} {
   }
   if (article?.textContent?.trim()) return {title, text: article.textContent};
   return {title, text: document.body?.textContent ?? ''};
+}
+
+function decodeBody(bytes: Uint8Array, contentType: string, isHtml: boolean): string {
+  let label = /charset\s*=\s*["']?([^\s;"']+)/i.exec(contentType)?.[1];
+  if (!label && isHtml) {
+    const head = new TextDecoder('latin1').decode(bytes.subarray(0, 1024));
+    label =
+      /<meta[^>]+charset\s*=\s*["']?([^\s;"'>\/]+)/i.exec(head)?.[1] ??
+      /<meta[^>]+http-equiv\s*=\s*["']?content-type[^>]*charset\s*=\s*([^\s;"'>]+)/i.exec(head)?.[1];
+  }
+  try {
+    return new TextDecoder(label ?? 'utf-8').decode(bytes);
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes);
+  }
 }
 
 async function pdfToText(bytes: Uint8Array): Promise<string> {
@@ -100,6 +107,13 @@ async function readCapped(res: Response, maxBytes: number, aborted: Promise<neve
 }
 
 async function fromUrl(input: IngestInput, deps: IngestDeps): Promise<{title?: string; text: string}> {
+  let scheme: string;
+  try {
+    scheme = new URL(input.uri).protocol;
+  } catch {
+    throw new IngestError('unsupported URL scheme');
+  }
+  if (scheme !== 'http:' && scheme !== 'https:') throw new IngestError('unsupported URL scheme');
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
   const controller = new AbortController();
@@ -127,7 +141,7 @@ async function fromUrl(input: IngestInput, deps: IngestDeps): Promise<{title?: s
     }
     const bytes = await readCapped(res, maxBytes, aborted);
     if (type === 'application/pdf') return {text: await Promise.race([pdfToText(bytes), aborted])};
-    const body = new TextDecoder('utf-8').decode(bytes);
+    const body = decodeBody(bytes, res.headers.get('content-type') ?? '', type === 'text/html');
     return type === 'text/html' ? htmlToText(body) : {text: body};
   } finally {
     clearTimeout(timer);

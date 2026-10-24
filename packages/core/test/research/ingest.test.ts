@@ -158,6 +158,51 @@ describe('ingestSource', () => {
     expect(text(dir, 's1')).toBe('foo bar');
   });
 
+  it('decodes windows-1252 declared in the header', async () => {
+    const dir = tmp();
+    await ingestSource(dir, {id: 's1', uri: 'https://x.test/a', kind: 'url'}, {
+      fetch: fetchOf(() => resp(new Uint8Array([0x63, 0x61, 0x66, 0xe9]), 'text/plain; charset=windows-1252')),
+    });
+    expect(text(dir, 's1')).toBe('café');
+  });
+
+  it('decodes windows-1252 declared by a meta tag', async () => {
+    const dir = tmp();
+    const head = Buffer.from('<!doctype html><html><head><meta charset="iso-8859-1"><title>T</title></head><body><article><p>');
+    const para = Buffer.from('Le café est ouvert depuis le matin et les clients arrivent nombreux chaque jour de la semaine, malgré la pluie.', 'latin1');
+    const tail = Buffer.from('</p></article></body></html>');
+    const s = await ingestSource(dir, {id: 's1', uri: 'https://x.test/a', kind: 'url'}, {
+      fetch: fetchOf(() => resp(Buffer.concat([head, para, tail]), 'text/html')),
+    });
+    expect(s.error).toBeUndefined();
+    expect(text(dir, 's1')).toContain('café');
+  });
+
+  it('still yields body text when Readability finds no article', async () => {
+    const dir = tmp();
+    await ingestSource(dir, {id: 's1', uri: 'https://x.test/a', kind: 'url'}, {
+      fetch: fetchOf(() => resp('<html><head><title>Tiny</title></head><body>just a few words</body></html>', 'text/html')),
+    });
+    expect(text(dir, 's1')).toContain('just a few words');
+  });
+
+  it('reports a corrupt pdf as an error without throwing', async () => {
+    const dir = tmp();
+    const s = await ingestSource(dir, {id: 's1', uri: 'https://x.test/a.pdf', kind: 'url'}, {
+      fetch: fetchOf(() => resp('this is not a pdf', 'application/pdf')),
+    });
+    expect(s.error).toMatch(/\S/);
+    expect(text(dir, 's1')).toBe('');
+  });
+
+  it('rejects non-http url schemes', async () => {
+    const dir = tmp();
+    const deps = {fetch: fetchOf(() => resp('x', 'text/plain'))};
+    for (const uri of ['file:///etc/passwd', 'ftp://x.test/a', 'not a url']) {
+      expect((await ingestSource(dir, {id: 's1', uri, kind: 'url'}, deps)).error).toBe('unsupported URL scheme');
+    }
+  });
+
   it('refuses unsafe ids', async () => {
     await expect(
       ingestSource(tmp(), {id: '../evil', uri: 'x', kind: 'search', text: 'x'}, {fetch: fetchOf(() => resp('', 'text/plain'))}),
