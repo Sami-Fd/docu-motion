@@ -44,3 +44,27 @@ export function extractFacts(
       `\n\n${blocks}`,
   };
 }
+
+export function writeScript(
+  topic: string,
+  language: string,
+  n: number,
+  facts: {id: string; statement: string; value?: string}[],
+): Prompt {
+  const lines = facts.map((f) => `${f.id}: ${f.statement}${f.value ? ` (${f.value})` : ''}`).join('\n');
+  return {
+    system:
+      'You write the narration of a short explainer video. Reply with JSON only. ' +
+      `Write all narration in this language: ${language}.`,
+    prompt:
+      `Topic: ${topic}\n\nWrite exactly ${n} scenes. Return {"scenes": [{"narration": "...", "factIds": ["f1"]}]}.\n` +
+      'Rules:\n' +
+      '- Each narration is 25 to 45 words.\n' +
+      '- Write for speech: short, natural sentences that sound good read aloud, not a written article.\n' +
+      '- Round numbers so they are easy to hear (say "about a third", not "33.4 %").\n' +
+      '- Do not put scene titles, numbering or headings in the narration.\n' +
+      '- "factIds" lists the ids of the facts the scene relies on (at most 6). Use only the ids listed below.\n' +
+      '- Build a clear arc: hook, explanation, key figures, conclusion.\n\n' +
+      `Facts:\n${lines}`,
+  };
+}
