@@ -47,3 +47,19 @@ export const twoLines = (text: string): string[] => {
   }
   return best;
 };
+
+/**
+ * Lays out a row of labels sharing one font size: a label stays on one line only if it fits at
+ * `fullSize`; otherwise it is split with `twoLines`. The shared size shrinks below `fullSize` only
+ * when some two-line label still does not fit.
+ */
+export const labelRows = (
+  labels: string[],
+  maxWidth: number,
+  fullSize: number,
+  charWidth: number,
+): {lines: string[][]; size: number} => {
+  const lines = labels.map((l) => (fitSize(l, maxWidth, fullSize, charWidth) >= fullSize ? [l] : twoLines(l)));
+  const size = Math.min(fullSize, ...lines.flat().map((l) => fitSize(l, maxWidth, fullSize, charWidth)));
+  return {lines, size};
+};

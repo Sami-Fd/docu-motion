@@ -12,7 +12,7 @@ export const ELDERLY_COLOR = '#b7a28c';
 
 export const useCharWidth = (): number => useTheme().charWidth;
 
-export {decimalsOf, fitSize, twoLines, wrapText} from './textLayout';
+export {decimalsOf, fitSize, labelRows, twoLines, wrapText} from './textLayout';
 
 export const formatNumber = (n: number, locale: string, decimals = decimalsOf(n)): string => {
   try {

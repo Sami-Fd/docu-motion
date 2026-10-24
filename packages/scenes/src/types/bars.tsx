@@ -5,7 +5,7 @@ import type {SceneProps} from '../film/types';
 import type {SceneOf} from '../schema';
 import {cueFrame} from '../timing';
 import {useTheme} from '../theme';
-import {SERIES_COLORS, Source, fitSize, formatNumber, twoLines, useCharWidth} from './common';
+import {SERIES_COLORS, Source, fitSize, formatNumber, labelRows, useCharWidth} from './common';
 
 const LEFT = 220;
 const RIGHT = 1700;
@@ -22,10 +22,8 @@ export const BarsScene: React.FC<SceneProps<SceneOf<'bars'>>> = ({spec, narratio
   const barW = Math.min(170, slot * 0.6);
   const max = Math.max(...spec.bars.map((b) => b.value), 1e-9);
   // One font size for all category labels, on at most two lines, so the row looks even.
-  // The font shrinks to fit rather than wrapping to a third line.
-  const singleLine = spec.bars.every((b) => fitSize(b.label, slot - 20, 36, cw) >= 30);
-  const lines = spec.bars.map((b) => (singleLine ? [b.label] : twoLines(b.label)));
-  const labelSize = Math.min(...lines.map((ls) => Math.min(...ls.map((l) => fitSize(l, slot - 20, 36, cw)))));
+  // One line at full size, else two full-size lines; shrinks only if two lines still do not fit.
+  const {lines, size: labelSize} = labelRows(spec.bars.map((b) => b.label), slot - 20, 36, cw);
   const values = spec.bars.map((b) => `${formatNumber(b.value, language)}${spec.unit ? ` ${spec.unit}` : ''}`);
   const valueSize = Math.min(...values.map((v) => fitSize(v, slot - 10, 40, cw)));
   return (

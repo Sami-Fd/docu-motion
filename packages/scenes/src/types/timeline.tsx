@@ -5,7 +5,7 @@ import type {SceneProps} from '../film/types';
 import type {SceneOf} from '../schema';
 import {cueFrame} from '../timing';
 import {useTheme} from '../theme';
-import {SERIES_COLORS, Source, fitSize, twoLines, useCharWidth} from './common';
+import {SERIES_COLORS, Source, fitSize, labelRows, useCharWidth} from './common';
 
 const LINE_Y = 560;
 const LEFT = 160;
@@ -21,9 +21,8 @@ export const TimelineScene: React.FC<SceneProps<SceneOf<'timeline'>>> = ({spec, 
   const slot = (RIGHT - LEFT) / n;
   const xs = spec.events.map((_, i) => LEFT + slot * (i + 0.5));
   const cues = spec.events.map((e, i) => cueFrame(narration, e.cue, durationFrames, i));
-  // At most two lines per label; the shared font size shrinks to fit the longest line.
-  const lines = spec.events.map((e) => (fitSize(e.label, slot - 24, 36, cw) >= 30 ? [e.label] : twoLines(e.label)));
-  const labelSize = Math.min(...lines.flat().map((l) => fitSize(l, slot - 24, 36, cw)));
+  // One line at full size, else two full-size lines; shrinks only if two lines still do not fit.
+  const {lines, size: labelSize} = labelRows(spec.events.map((e) => e.label), slot - 24, 36, cw);
   const dateSize = Math.min(...spec.events.map((e) => fitSize(e.date, slot - 24, 56, cw * 1.05)));
   const first = Math.min(...cues);
   const last = Math.max(...cues);
