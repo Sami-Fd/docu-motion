@@ -1,0 +1,17 @@
+# Render a project:   docker compose run --rm render examples/how-it-works --style craie
+# Default demo:       docker compose up render
+# Visual preview:     docker compose --profile studio up -d studio   → http://localhost:3001
+services:
+  render:
+    build: .
+    image: docu-motion
+    volumes:
+      - ./examples:/app/examples
+    command: ["examples/how-it-works"]
+
+  studio:
+    image: docu-motion
+    entrypoint: ["npx", "remotion", "studio", "packages/scenes/src/index.ts", "--port", "3000", "--no-open"]
+    ports:
+      - "3001:3000"
+    profiles: ["studio"]
