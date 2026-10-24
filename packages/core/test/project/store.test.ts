@@ -15,6 +15,7 @@ function makeProject(topic = 'Retraites'): Project {
       style: 'papier',
       provider: {kind: 'fake', provider: 'fake'},
       webSearch: 'off',
+      sources: [],
     },
     sources: [],
     facts: [],
@@ -25,9 +26,12 @@ function makeProject(topic = 'Retraites'): Project {
         spec: {type: 'title', title: 'Hello', decor: 'none', characters: 0},
         status: 'ok',
         durationFrames: 120,
+        factIds: [],
+        warnings: [],
       },
     ],
     voice: {engine: 'none'},
+    progress: {done: []},
   };
 }
 

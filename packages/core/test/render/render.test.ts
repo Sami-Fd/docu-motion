@@ -22,14 +22,16 @@ const baseProject = (): Project => ({
     style: 'papier',
     provider: {kind: 'fake', provider: 'fake'},
     webSearch: 'off',
+    sources: [],
   },
   sources: [],
   facts: [],
   scenes: [
-    {id: 's0', narration: NARRATION, spec: EXAMPLES.title, status: 'ok', durationFrames: 60},
-    {id: 's1', narration: NARRATION, spec: EXAMPLES.bars, status: 'ok', durationFrames: 60},
+    {id: 's0', narration: NARRATION, spec: EXAMPLES.title, status: 'ok', durationFrames: 60, factIds: [], warnings: []},
+    {id: 's1', narration: NARRATION, spec: EXAMPLES.bars, status: 'ok', durationFrames: 60, factIds: [], warnings: []},
   ],
   voice: {engine: 'none'},
+  progress: {done: []},
 });
 
 let root: string;

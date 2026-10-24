@@ -25,6 +25,7 @@ export const exampleProject = (style: StyleName, durationFrames = 300): Project 
     style,
     provider: {kind: 'fake', provider: 'fake'},
     webSearch: 'off',
+    sources: [],
   },
   sources: [],
   facts: [],
@@ -34,6 +35,9 @@ export const exampleProject = (style: StyleName, durationFrames = 300): Project 
     spec: EXAMPLES[t],
     status: 'ok' as const,
     durationFrames,
+    factIds: [],
+    warnings: [],
   })),
   voice: {engine: 'none'},
+  progress: {done: []},
 });

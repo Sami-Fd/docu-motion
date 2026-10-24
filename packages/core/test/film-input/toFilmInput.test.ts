@@ -24,14 +24,16 @@ const project = (audio?: string): Project => ({
   brief: {
     topic: 't', language: 'en-GB', targetMinutes: 1, style: 'nuit',
     provider: {kind: 'fake', provider: 'fake'}, webSearch: 'off',
+    sources: [],
   },
   sources: [],
   facts: [],
   scenes: [{
-    id: 's0', narration: 'Hello.', spec: EXAMPLES.title, status: 'ok', durationFrames: 90,
+    id: 's0', narration: 'Hello.', spec: EXAMPLES.title, status: 'ok', durationFrames: 90, factIds: [], warnings: [],
     ...(audio === undefined ? {} : {audio: {path: audio, seconds: 2}}),
   }],
   voice: {engine: 'none'},
+  progress: {done: []},
 });
 
 const audioOf = (audio: string) => {

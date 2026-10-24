@@ -36,6 +36,10 @@ const uniqueSceneIds = (scenes: {id: string}[], ctx: z.RefinementCtx): void => {
   });
 };
 
+export const STEP_NAMES = ['sources', 'facts', 'script', 'scenes', 'voice', 'layout', 'render'] as const;
+export const StepNameSchema = z.enum(STEP_NAMES);
+export type StepName = z.infer<typeof StepNameSchema>;
+
 export const ProjectSchema = z.object({
   version: z.literal(PROJECT_VERSION),
   brief: z.object({
@@ -46,6 +50,8 @@ export const ProjectSchema = z.object({
     tone: z.string().optional(),
     provider: ProviderRefSchema,
     webSearch: z.enum(['off', 'native', 'tavily', 'brave']),
+    /** User URLs, and file paths relative to the project dir. */
+    sources: z.array(z.string()).default([]),
   }),
   sources: z.array(
     z.object({
@@ -76,6 +82,9 @@ export const ProjectSchema = z.object({
         status: z.enum(['ok', 'fallback', 'review']),
         audio: z.object({path: z.string(), seconds: z.number()}).optional(),
         durationFrames: z.number().int().positive(),
+        factIds: z.array(z.string()).default([]),
+        warnings: z.array(z.string()).default([]),
+        dirty: z.boolean().optional(),
       }),
     )
     .superRefine(uniqueSceneIds),
@@ -83,6 +92,12 @@ export const ProjectSchema = z.object({
     engine: z.enum(['edge', 'elevenlabs', 'openai', 'upload', 'none']),
     voiceId: z.string().optional(),
   }),
+  progress: z
+    .object({
+      done: z.array(StepNameSchema),
+      failed: z.object({step: StepNameSchema, message: z.string()}).optional(),
+    })
+    .default({done: []}),
   youtube: z
     .object({
       titles: z.array(z.string()),
