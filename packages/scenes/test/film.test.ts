@@ -8,6 +8,7 @@ import {SCENE_TYPES, EXAMPLES} from '../src/schema';
 
 const film = (durations: number[]): FilmInput => ({
   style: 'papier',
+  language: 'fr',
   subtitles: true,
   assetBase: null,
   scenes: durations.map((d, i) => ({id: `s${i}`, narration: 'x', spec: EXAMPLES.title, durationFrames: d})),

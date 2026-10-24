@@ -84,10 +84,18 @@ export const Slide: React.FC<{dx?: number; dy?: number; delay?: number; children
 };
 
 // Paper label with a title and a short sentence (one idea per scene).
+// Without `width`, the label is sized to its text (at most 1760 px, the frame width minus margins),
+// and the title shrinks when it would not fit.
+const LABEL_MAX_WIDTH = 1760;
 export const Label: React.FC<{title: string; text?: string; x?: number; y?: number; delay?: number; width?: number}> = ({
-  title, text, x = 960, y = 150, delay = 10, width = 1000,
+  title, text, x = 960, y = 150, delay = 10, width: fixedWidth,
 }) => {
-  const {colors, font} = useTheme();
+  const {colors, font, charWidth, textScale} = useTheme();
+  const pad = 120;
+  const natural = Math.max(title.length * 64, (text?.length ?? 0) * 38) * charWidth + pad;
+  const width = fixedWidth ?? Math.min(LABEL_MAX_WIDTH, Math.max(700, natural));
+  const titleSize = Math.min(64, (width - pad) / Math.max(1, title.length * charWidth));
+  const textSize = text ? Math.min(38, (width - pad) / Math.max(1, text.length * charWidth)) : 38;
   const h = text ? 190 : 130;
   const s = useSpringIn(delay);
   const pText = useSpringIn(delay + 12, false);
@@ -96,11 +104,11 @@ export const Label: React.FC<{title: string; text?: string; x?: number; y?: numb
       <g filter="url(#papier)">
         <rect x={-width / 2} y={-h / 2} width={width} height={h} rx={26} fill={colors.etiquette} />
       </g>
-      <text y={text ? -18 : 22} textAnchor="middle" fontFamily={font} fontWeight={600} fontSize={64} fill={colors.texte}>
+      <text y={text ? -18 : 22} textAnchor="middle" fontFamily={font} fontWeight={600} fontSize={titleSize * textScale} fill={colors.texte}>
         {title}
       </text>
       {text && (
-        <text y={52} textAnchor="middle" fontFamily={font} fontWeight={500} fontSize={38} fill={colors.texte} opacity={pText}>
+        <text y={52} textAnchor="middle" fontFamily={font} fontWeight={500} fontSize={textSize * textScale} fill={colors.texte} opacity={pText}>
           {text}
         </text>
       )}
@@ -221,9 +229,9 @@ export const Text: React.FC<{
   x: number; y: number; size?: number; bold?: boolean; color?: string; anchor?: 'start' | 'middle' | 'end';
   opacity?: number; onBackground?: boolean; children: React.ReactNode;
 }> = ({x, y, size = 40, bold = false, color, anchor = 'middle', opacity = 1, onBackground = false, children}) => {
-  const {colors, font} = useTheme();
+  const {colors, font, textScale} = useTheme();
   return (
-    <text x={x} y={y} textAnchor={anchor} fontFamily={font} fontWeight={bold ? 600 : 500} fontSize={size}
+    <text x={x} y={y} textAnchor={anchor} fontFamily={font} fontWeight={bold ? 600 : 500} fontSize={size * textScale}
       fill={color ?? (onBackground ? colors.texteFond : colors.texte)} opacity={opacity}>
       {children}
     </text>

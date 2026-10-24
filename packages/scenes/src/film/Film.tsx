@@ -22,7 +22,9 @@ const Fade: React.FC<{durationFrames: number; children: React.ReactNode}> = ({du
   return <AbsoluteFill style={{opacity: fadeOpacity(frame, durationFrames)}}>{children}</AbsoluteFill>;
 };
 
-export const Film: React.FC<FilmInput> = ({style, subtitles, assetBase, scenes}) => (
+export const DEFAULT_LANGUAGE = 'fr';
+
+export const Film: React.FC<FilmInput> = ({style, language, subtitles, assetBase, scenes}) => (
   <ThemeProvider style={style}>
     <AbsoluteFill style={{backgroundColor: getTheme(style).colors.creme}}>
       <Series>
@@ -31,7 +33,8 @@ export const Film: React.FC<FilmInput> = ({style, subtitles, assetBase, scenes})
           return (
             <Series.Sequence key={s.id} durationInFrames={d}>
               <Fade durationFrames={d}>
-                <SceneView spec={s.spec} narration={s.narration} durationFrames={d} index={i} />
+                <SceneView spec={s.spec} narration={s.narration} durationFrames={d} index={i}
+                  language={language ?? DEFAULT_LANGUAGE} />
               </Fade>
               {subtitles && <Subtitles text={s.narration} durationFrames={d} />}
               {s.audioPath && <Html5Audio src={audioUrl(assetBase, s.audioPath)} />}

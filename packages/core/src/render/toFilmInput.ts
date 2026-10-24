@@ -6,6 +6,7 @@ import type {Project} from '../project/schema.js';
 export function toFilmInput(p: Project, projectDir: string, assetBase: string | null): FilmInput {
   return {
     style: p.brief.style,
+    language: p.brief.language,
     subtitles: true,
     assetBase,
     scenes: p.scenes.map((s) => {

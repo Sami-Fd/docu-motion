@@ -2,14 +2,18 @@
   "name": "docu-motion",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "test": "vitest run --project unit",
     "test:visual": "vitest run --project visual --passWithNoTests",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "sheet": "tsx --tsconfig tsconfig.base.json scripts/contact-sheet.ts"
   },
   "devDependencies": {
     "@types/node": "20.17.57",
+    "tsx": "4.20.3",
     "typescript": "5.8.3",
     "vitest": "3.2.4"
   }

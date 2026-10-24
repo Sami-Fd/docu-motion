@@ -33,9 +33,12 @@ const PAPIER = {
 export type Palette = typeof PAPIER;
 export type FilterName = 'papier' | 'craie' | 'plat' | 'lueur';
 
-export type Theme = {name: StyleName; colors: Palette; filter: FilterName; font: string};
+// `textScale`: multiplier applied to every font size, so that fonts with a small x-height (Caveat)
+// read as large as the others. `charWidth`: rough average glyph advance per px of *nominal* font size
+// (textScale included), used to estimate text widths so that strings never overflow.
+export type Theme = {name: StyleName; colors: Palette; filter: FilterName; font: string; charWidth: number; textScale: number};
 
-type StyleDef = {colors: Palette; filter: FilterName; family: string; load: () => string};
+type StyleDef = {colors: Palette; filter: FilterName; family: string; charWidth: number; textScale: number; load: () => string};
 
 const subsets = ['latin', 'latin-ext'] as ('latin' | 'latin-ext')[];
 
@@ -44,6 +47,8 @@ const STYLES: Record<StyleName, StyleDef> = {
     colors: PAPIER,
     filter: 'papier',
     family: 'Fredoka',
+    charWidth: 0.56,
+    textScale: 1,
     load: () => fredoka('normal', {weights: ['500', '600'], subsets}).fontFamily,
   },
   craie: {
@@ -54,6 +59,8 @@ const STYLES: Record<StyleName, StyleDef> = {
     },
     filter: 'craie',
     family: 'Caveat',
+    charWidth: 0.52,
+    textScale: 1.15,
     load: () => caveat('normal', {weights: ['500', '700'], subsets}).fontFamily,
   },
   infographie: {
@@ -63,6 +70,8 @@ const STYLES: Record<StyleName, StyleDef> = {
     },
     filter: 'plat',
     family: 'Poppins',
+    charWidth: 0.62,
+    textScale: 1,
     load: () => poppins('normal', {weights: ['500', '600'], subsets}).fontFamily,
   },
   nuit: {
@@ -73,6 +82,8 @@ const STYLES: Record<StyleName, StyleDef> = {
     },
     filter: 'lueur',
     family: 'Space Grotesk',
+    charWidth: 0.6,
+    textScale: 1,
     load: () => spaceGrotesk('normal', {weights: ['500', '600'], subsets}).fontFamily,
   },
 };
@@ -97,7 +108,7 @@ const fontFor = (name: StyleName): string => {
 export const getTheme = (style: string | undefined): Theme => {
   const name: StyleName = isStyleName(style) ? style : 'papier';
   const def = STYLES[name];
-  return {name, colors: def.colors, filter: def.filter, font: fontFor(name)};
+  return {name, colors: def.colors, filter: def.filter, font: fontFor(name), charWidth: def.charWidth, textScale: def.textScale};
 };
 
 const ThemeContext = React.createContext<Theme | null>(null);
