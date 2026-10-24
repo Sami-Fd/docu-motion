@@ -26,7 +26,11 @@ export type MakeProviderOpts = {
 
 const VALIDATION_RETRIES = 3;
 const TRANSIENT_BACKOFF_MS = [1000, 4000];
-const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const defaultSleep = (ms: number) =>
+  new Promise<void>((r) => {
+    // unref: a pending backoff (e.g. after an abort) must not keep the process alive
+    setTimeout(r, ms).unref();
+  });
 
 export function makeProvider(raw: RawProvider, opts: MakeProviderOpts = {}): LlmProvider {
   const sleep = opts.sleep ?? defaultSleep;

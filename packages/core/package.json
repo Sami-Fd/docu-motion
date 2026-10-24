@@ -10,7 +10,13 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.87",
+    "@ai-sdk/google": "4.0.104",
+    "@ai-sdk/mistral": "4.0.71",
+    "@ai-sdk/openai": "4.0.101",
+    "@ai-sdk/openai-compatible": "3.0.77",
     "@docu-motion/scenes": "*",
+    "@openrouter/ai-sdk-provider": "3.1.0",
     "@remotion/bundler": "4.0.538",
     "@remotion/cli": "4.0.538",
     "@remotion/renderer": "4.0.538",
