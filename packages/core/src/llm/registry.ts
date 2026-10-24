@@ -2,6 +2,7 @@ import {z} from 'zod';
 import type {ProviderRef} from '../project/schema.js';
 import type {Settings} from '../settings/settings.js';
 import {createApiProvider} from './aiSdk.js';
+import {createCliProvider} from './cli.js';
 import {demoResponder} from './demoResponder.js';
 import {createFakeProvider} from './fake.js';
 import type {LlmProvider} from './types.js';
@@ -11,7 +12,7 @@ export function createProvider(ref: ProviderRef, settings: Settings): LlmProvide
     case 'api':
       return createApiProvider(ref, settings);
     case 'cli':
-      throw new Error('CLI providers arrive in Task 4');
+      return createCliProvider(ref);
     case 'fake':
       return createFakeProvider(demoResponder);
   }

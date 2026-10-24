@@ -12,8 +12,8 @@ describe('createProvider', () => {
   it('dispatches api providers', () => {
     expect(() => createProvider({kind: 'api', provider: 'anthropic'}, settings)).toThrow(/ANTHROPIC_API_KEY/);
   });
-  it('cli arrives in Task 4', () => {
-    expect(() => createProvider({kind: 'cli', provider: 'claude'}, settings)).toThrow('CLI providers arrive in Task 4');
+  it('dispatches cli providers', () => {
+    expect(createProvider({kind: 'cli', provider: 'claude'}, settings).name).toBe('cli:claude');
   });
 });
 
