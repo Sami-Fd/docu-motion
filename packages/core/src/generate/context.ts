@@ -3,13 +3,15 @@ import type {Project, StepName} from '../project/schema.js';
 import type {SearchHit} from '../research/search.js';
 import type {Settings} from '../settings/settings.js';
 
+export type ProgressEvent = {step: StepName; ratio?: number; log?: string};
+
 export type StepContext = {
   projectDir: string;
   llm: LlmProvider;
   settings: Settings;
   fetch: typeof fetch;
   signal?: AbortSignal;
-  onProgress: (e: {step: StepName; ratio?: number; log?: string}) => void;
+  onProgress: (e: ProgressEvent) => void;
   nativeSearch?: (query: string, signal?: AbortSignal) => Promise<SearchHit[]>;
 };
 

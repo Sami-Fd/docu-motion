@@ -7,7 +7,7 @@ import type {Step, StepContext} from '../context.js';
 import {searchQueries} from '../prompts.js';
 
 const MAX_SEARCH_SOURCES = 6;
-const QueriesSchema = z.object({queries: z.array(z.string().min(1).max(120)).min(1).max(3)});
+export const QueriesSchema = z.object({queries: z.array(z.string().min(1).max(120)).min(1).max(3)});
 
 const isUrl = (s: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(s);
 

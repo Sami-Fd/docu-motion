@@ -1,3 +1,4 @@
+import {appendFileSync} from 'node:fs';
 import {EXAMPLES, SCENE_TYPES} from '@docu-motion/scenes';
 import type {ZodType} from 'zod';
 
@@ -108,25 +109,39 @@ function scene(prompt: string) {
   return withCues(structuredClone(EXAMPLES[type]), words);
 }
 
+/**
+ * Test-only hook: when DOCU_MOTION_FAKE_LOG names a file, one line per call (the recognised schema) is appended to it.
+ * Read only here and by scripts/make.ts (DOCU_MOTION_FAIL_AT); never set outside tests.
+ */
+function record(kind: string): void {
+  const file = process.env.DOCU_MOTION_FAKE_LOG;
+  if (file) appendFileSync(file, `${kind}
+`);
+}
+
 export function demoResponder(req: {schema: ZodType; system: string; prompt: string}): unknown {
   const {schema, prompt} = req;
   const ok = (v: unknown) => schema.safeParse(v).success;
+  const answer = (kind: string, v: unknown) => {
+    record(kind);
+    return v;
+  };
 
   const sceneSpec = scene(prompt);
-  if (/Narration of the scene/.test(prompt) && ok(sceneSpec)) return sceneSpec;
+  if (/Narration of the scene/.test(prompt) && ok(sceneSpec)) return answer('scene', sceneSpec);
 
   const q = queries(prompt);
-  if (ok(q)) return q;
+  if (ok(q)) return answer('queries', q);
   const f = facts(prompt);
-  if (ok(f)) return f;
-  const asked = Number(/exactly (\d+) scenes/.exec(prompt)?.[1]);
+  if (ok(f)) return answer('facts', f);
+  const asked = Number(/exactly (d+) scenes/.exec(prompt)?.[1]);
   const sizes = [...(asked > 0 ? [asked] : []), ...Array.from({length: 40}, (_, i) => i + 1)];
   for (const n of sizes) {
     const s = script(prompt, n);
-    if (ok(s)) return s;
+    if (ok(s)) return answer('script', s);
   }
-  if (ok(sceneSpec)) return sceneSpec;
+  if (ok(sceneSpec)) return answer('scene', sceneSpec);
   const probe = {ok: true};
-  if (ok(probe)) return probe;
+  if (ok(probe)) return answer('probe', probe);
   throw new Error('demoResponder: unrecognised schema');
 }

@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {z} from 'zod';
 import {SceneSpecSchema, SCENE_TYPES} from '@docu-motion/scenes';
+import {QueriesSchema} from '../../src/generate/steps/sources.js';
 import {FactsOutputSchema} from '../../src/generate/steps/facts.js';
 import {ScriptOutputSchema} from '../../src/generate/steps/script.js';
 import {extractFacts, fillScene, searchQueries, writeScript} from '../../src/generate/prompts.js';
@@ -17,7 +18,7 @@ const facts = [
 describe('demoResponder', () => {
   it('answers the queries schema', async () => {
     const r = await llm.generateObject({
-      schema: z.object({queries: z.array(z.string().min(1).max(120)).min(1).max(3)}),
+      schema: QueriesSchema,
       ...searchQueries('Topic X', 'en'),
     });
     expect(r.queries.length).toBeGreaterThan(0);
