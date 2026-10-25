@@ -115,8 +115,7 @@ function scene(prompt: string) {
  */
 function record(kind: string): void {
   const file = process.env.DOCU_MOTION_FAKE_LOG;
-  if (file) appendFileSync(file, `${kind}
-`);
+  if (file) appendFileSync(file, `${kind}\n`);
 }
 
 export function demoResponder(req: {schema: ZodType; system: string; prompt: string}): unknown {
@@ -134,7 +133,7 @@ export function demoResponder(req: {schema: ZodType; system: string; prompt: str
   if (ok(q)) return answer('queries', q);
   const f = facts(prompt);
   if (ok(f)) return answer('facts', f);
-  const asked = Number(/exactly (d+) scenes/.exec(prompt)?.[1]);
+  const asked = Number(/exactly (\d+) scenes/.exec(prompt)?.[1]);
   const sizes = [...(asked > 0 ? [asked] : []), ...Array.from({length: 40}, (_, i) => i + 1)];
   for (const n of sizes) {
     const s = script(prompt, n);

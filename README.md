@@ -34,6 +34,8 @@ npm run make -- --resume "data/projects/<project folder>"                       
 npm run make -- --check --provider anthropic                                                        # tests the connection: OK <provider> <ms>ms
 ```
 
+Put the topic before `--sources`, which takes every following value up to the next option.
+
 Options: `--style papier|craie|infographie|nuit` (default `papier`), `--length <minutes>` (default 3), `--language <code>` (default from settings), `--provider`, `--model`, `--sources <url|file>...`, `--voice none` (the only engine for now), `--data <dir>`. On failure it prints `FAILED at <step>: <message>` and the `--resume` command, and exits 1. A finished step is never run again on resume. Ctrl+C exits with code 130.
 
 **Settings.** Choose the default provider and web search in `data/config.json` (git-ignored):

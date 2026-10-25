@@ -79,6 +79,18 @@ describe('make CLI', () => {
     expect((await loadProject(dir)).progress.done).toHaveLength(7);
   }, 600_000);
 
+  it('checks the connection of the fake provider', async () => {
+    const r = await runMake(['--check', '--provider', 'fake', '--data', data]);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(/^OK fake \d+ms/m);
+  }, 60_000);
+
+  it('rejects an out-of-range length', async () => {
+    const r = await runMake([...base('Sujet'), '--length', '30']);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('--length');
+  }, 60_000);
+
   it('rejects an unknown style', async () => {
     const r = await runMake([...base('Sujet'), '--style', 'neon']);
     expect(r.code).toBe(1);

@@ -21,6 +21,7 @@ import {
   nativeSearchFor,
   requireProvider,
   resolveWebSearch,
+  redact,
   testConnection,
   type ProviderRef,
   type Step,
@@ -109,7 +110,7 @@ async function main(): Promise<number> {
   let minutes = 3;
   if (args.length !== undefined) {
     minutes = Number(args.length);
-    if (!Number.isFinite(minutes) || minutes <= 0) usage(`Invalid --length "${args.length}": expected a number of minutes`);
+    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 10) usage(`Invalid --length "${args.length}": expected a number of minutes between 1 and 10`);
   }
   if (args.voice !== undefined && args.voice !== 'none') usage(`Voice engine "${args.voice}" arrives in Plan 3; use --voice none`);
   const explicitRef = args.provider !== undefined ? providerRefFor(args.provider, args.model) : undefined;
@@ -125,7 +126,8 @@ async function main(): Promise<number> {
       console.log(`OK ${ref.provider} ${result.ms}ms`);
       return 0;
     }
-    console.error(result.message);
+    const secrets = Object.values(settings.keys).filter((v): v is string => typeof v === 'string' && v.length > 0);
+    console.error(redact(result.message, secrets));
     return 1;
   }
 

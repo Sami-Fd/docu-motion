@@ -11,7 +11,7 @@
   "scripts": {
     "test": "vitest run --project unit",
     "test:visual": "vitest run --project visual --passWithNoTests",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p scripts",
     "render": "tsx --tsconfig tsconfig.base.json scripts/render-project.ts",
     "sheet": "tsx --tsconfig tsconfig.base.json scripts/contact-sheet.ts",
     "make": "tsx --tsconfig tsconfig.base.json scripts/make.ts"

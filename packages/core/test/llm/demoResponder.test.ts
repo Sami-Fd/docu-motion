@@ -43,6 +43,12 @@ describe('demoResponder', () => {
     expect(r.scenes).toHaveLength(11);
   });
 
+  it('honours "exactly N scenes" from the prompt when the schema accepts a range', async () => {
+    const range = z.object({scenes: z.array(z.object({narration: z.string(), factIds: z.array(z.string())})).min(1).max(20)});
+    const r = await llm.generateObject({schema: range, system: '', prompt: 'Write exactly 11 scenes about Topic X.\nf1: A'});
+    expect(r.scenes).toHaveLength(11);
+  });
+
   it('cycles scene types in order with cues taken from the narration', async () => {
     const script = await llm.generateObject({schema: ScriptOutputSchema(10), ...writeScript('Topic X', 'en', 10, facts)});
     const types: string[] = [];
