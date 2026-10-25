@@ -17,12 +17,22 @@ function fallbackTitle(narration: string): string {
   return cutOnWord(sentence, TITLE_MAX) || 'Untitled';
 }
 
-/** Sets the source line from the first cited fact with a resolvable source; drops any LLM-invented one. */
+/**
+ * Sets the source line from the first cited *verified* fact with a resolvable source; drops any
+ * LLM-invented one, so an unverified figure never shows "Source: X". Quote scenes never carry a
+ * source line (the author is the attribution); title scenes are left untouched.
+ */
 export function withSourceLine(spec: SceneSpec, p: Project, factIds: string[]): SceneSpec {
-  if (spec.type === 'title' || spec.type === 'quote') return spec;
+  if (spec.type === 'title') return spec;
+  if (spec.type === 'quote') {
+    if (!('source' in spec)) return spec;
+    const {source: _drop, ...rest} = spec;
+    return rest as SceneSpec;
+  }
   let title: string | undefined;
   for (const id of factIds) {
-    const sid = p.facts.find((f) => f.id === id)?.sourceId;
+    const fact = p.facts.find((f) => f.id === id);
+    const sid = fact?.verified ? fact.sourceId : undefined;
     const t = sid ? p.sources.find((s) => s.id === sid)?.title.trim() : undefined;
     if (t) {
       title = t;

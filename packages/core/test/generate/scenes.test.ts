@@ -126,9 +126,22 @@ describe('withSourceLine', () => {
     expect('source' in out).toBe(false);
     expect(SceneSpecSchema.safeParse(out).success).toBe(true);
   });
-  it('leaves title and quote untouched', () => {
+  it('never cites the source of an unverified fact', () => {
+    const q = project();
+    q.facts.push({id: 'f3', statement: 'Gamma vaut 3', value: '3', sourceId: 'src1', verified: false});
+    const out = withSourceLine({...bars, source: 'invented'} as SceneSpec, q, ['f3']);
+    expect('source' in out).toBe(false);
+    // a later verified fact is still used
+    expect((withSourceLine(bars as SceneSpec, q, ['f3', 'f1']) as {source?: string}).source).toBe('INSEE');
+  });
+  it('drops an LLM-set source on quote scenes', () => {
     const q = EXAMPLES.quote;
     expect(withSourceLine(q, p, ['f1'])).toEqual(q);
+    const out = withSourceLine({...q, source: 'Le Monde'} as SceneSpec, p, ['f1']);
+    expect('source' in out).toBe(false);
+    expect(SceneSpecSchema.safeParse(out).success).toBe(true);
+  });
+  it('leaves title untouched', () => {
     const t = {...EXAMPLES.title, source: 'x'};
     expect(withSourceLine(t, p, ['f1'])).toEqual(t);
   });
