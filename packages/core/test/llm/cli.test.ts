@@ -1,7 +1,10 @@
+import {existsSync, readdirSync, realpathSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {afterEach, describe, expect, it} from 'vitest';
 import {z} from 'zod';
-import {createCliProvider, planSpawn} from '../../src/llm/cli.js';
+import {CLI_ARGS, createCliProvider, planSpawn} from '../../src/llm/cli.js';
 import {createProvider} from '../../src/llm/registry.js';
 import {ProviderError} from '../../src/llm/types.js';
 import {SettingsSchema} from '../../src/settings/settings.js';
@@ -9,6 +12,12 @@ import {SettingsSchema} from '../../src/settings/settings.js';
 const fixture = fileURLToPath(new URL('../fixtures/fake-cli.mjs', import.meta.url));
 const deps = {command: process.execPath, args: [fixture]};
 const schema = z.object({n: z.number()});
+
+const inside = (parent: string, child: string) => {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+const listCliDirs = () => readdirSync(os.tmpdir()).filter((d) => d.startsWith('docu-motion-cli-'));
 
 afterEach(() => {
   delete process.env.FAKE_CLI_MODE;
@@ -41,6 +50,35 @@ describe('createCliProvider', () => {
     expect(out.input).toContain('SYS');
     expect(out.input).toContain('secret prompt');
     expect(JSON.stringify(out.args)).not.toContain('secret prompt');
+  });
+
+  it('runs the CLI in a fresh empty temp dir, not the repo, and removes it afterwards', async () => {
+    process.env.FAKE_CLI_MODE = 'echo';
+    const p = createCliProvider({kind: 'cli', provider: 'claude'}, deps);
+    const out = JSON.parse(await p.generateText({system: 's', prompt: 'p'})) as {cwd: string};
+    const repo = realpathSync(fileURLToPath(new URL('../../../../', import.meta.url)));
+    expect(inside(repo, out.cwd)).toBe(false);
+    expect(out.cwd).not.toBe(process.cwd());
+    expect(inside(realpathSync(os.tmpdir()), out.cwd) || inside(os.tmpdir(), out.cwd)).toBe(true);
+    expect(path.basename(out.cwd)).toMatch(/^docu-motion-cli-/);
+    expect(existsSync(out.cwd)).toBe(false);
+  });
+
+  it('removes the temp dir after a failure too', async () => {
+    process.env.FAKE_CLI_MODE = 'fail';
+    const before = new Set(listCliDirs());
+    const p = createCliProvider({kind: 'cli', provider: 'codex'}, deps);
+    await p.generateText({system: 's', prompt: 'p'}).catch(() => {});
+    await new Promise((r) => setTimeout(r, 50));
+    expect(listCliDirs().filter((d) => !before.has(d))).toEqual([]);
+  });
+
+  it('passes tool-restricting flags to claude and codex', () => {
+    expect(CLI_ARGS.claude.slice(0, 3)).toEqual(['-p', '--output-format', 'json']);
+    expect(CLI_ARGS.claude).toEqual(expect.arrayContaining(['--max-turns', '1', '--disallowedTools', 'Bash', 'Read', 'Write', 'Edit']));
+    expect(CLI_ARGS.codex).toEqual(['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-']);
+    expect(CLI_ARGS.gemini).toEqual(['-p']);
+    for (const a of Object.values(CLI_ARGS).flat()) expect(a).toMatch(/^[\w.-]+$/); // safe for the cmd.exe command line
   });
 
   it('turns a non-zero exit into a ProviderError with stderr', async () => {

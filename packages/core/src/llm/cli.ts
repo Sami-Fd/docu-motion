@@ -1,13 +1,44 @@
 import {execFileSync, spawn} from 'node:child_process';
+import {mkdtempSync, rmSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type {ProviderRef} from '../project/schema.js';
 import {makeProvider} from './makeProvider.js';
 import {ProviderError, type LlmProvider} from './types.js';
 
 type CliName = 'claude' | 'codex' | 'gemini';
 
-const FIXED_ARGS: Record<CliName, string[]> = {
-  claude: ['-p', '--output-format', 'json'],
-  codex: ['exec', '-'],
+/**
+ * Constant arguments. Prompts contain untrusted web text, so the CLIs run with as few powers as their
+ * documented flags allow, always in a fresh empty temp dir (never the repo, which holds data/config.json):
+ * - claude: one turn, built-in file/shell/web tools disallowed.
+ * - codex: read-only sandbox; --skip-git-repo-check because the temp dir is not a git repo.
+ * - gemini: no extra flags (its non-interactive mode already refuses tools that need approval);
+ *   cwd isolation is the only measure.
+ * Every argument must stay free of spaces and cmd.exe metacharacters (see planSpawn).
+ */
+export const CLI_ARGS: Record<CliName, readonly string[]> = {
+  claude: [
+    '-p',
+    '--output-format',
+    'json',
+    '--max-turns',
+    '1',
+    '--disallowedTools',
+    'Bash',
+    'Read',
+    'Write',
+    'Edit',
+    'MultiEdit',
+    'NotebookEdit',
+    'Glob',
+    'Grep',
+    'LS',
+    'WebFetch',
+    'WebSearch',
+    'Task',
+  ],
+  codex: ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '-'],
   gemini: ['-p'],
 };
 
@@ -78,10 +109,10 @@ function claudeError(stdout: string): string | undefined {
 
 export function createCliProvider(ref: ProviderRef, deps: CliDeps = {}): LlmProvider {
   const cli = ref.provider as CliName;
-  if (!(cli in FIXED_ARGS)) throw new Error(`Unknown CLI provider "${ref.provider}"`);
+  if (!(cli in CLI_ARGS)) throw new Error(`Unknown CLI provider "${ref.provider}"`);
   const name = `cli:${cli}`;
   const command = deps.command ?? cli;
-  const args = deps.args ?? FIXED_ARGS[cli];
+  const args = deps.args ?? [...CLI_ARGS[cli]];
   const timeoutMs = deps.timeoutMs ?? TIMEOUT_MS;
   const maxStdout = deps.maxStdoutBytes ?? MAX_STDOUT_BYTES;
   const notFound = () =>
@@ -102,7 +133,20 @@ export function createCliProvider(ref: ProviderRef, deps: CliDeps = {}): LlmProv
           ? planSpawn('', 'linux', command, args)
           : planSpawn(whereOutput(command), process.platform, command, args, process.env.ComSpec);
       if (!plan) return reject(notFound());
+      // Fresh empty working dir: an agentic CLI must not see the repo (keys in data/config.json).
+      const cwd = mkdtempSync(path.join(os.tmpdir(), 'docu-motion-cli-'));
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        try {
+          rmSync(cwd, {recursive: true, force: true, maxRetries: 3});
+        } catch {
+          // best effort: a killed process may still hold the dir on Windows
+        }
+      };
       const child = spawn(plan.file, plan.args, {
+        cwd,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -143,18 +187,20 @@ export function createCliProvider(ref: ProviderRef, deps: CliDeps = {}): LlmProv
       child.stderr.setEncoding('utf8').on('data', (c: string) => {
         stderr = (stderr + c).slice(-MAX_STDERR_CHARS);
       });
-      child.on('error', (e: NodeJS.ErrnoException) =>
-        finish(() => reject(e.code === 'ENOENT' ? notFound() : fail(e.message))),
-      );
-      child.on('close', (code) =>
+      child.on('error', (e: NodeJS.ErrnoException) => {
+        cleanup();
+        finish(() => reject(e.code === 'ENOENT' ? notFound() : fail(e.message)));
+      });
+      child.on('close', (code) => {
+        cleanup();
         finish(() => {
           if (code === 0) return resolve(stdout);
           if (code === 9009 && plan.verbatim) return reject(notFound()); // cmd.exe: program not found
           // claude prints errors as JSON on stdout; stderr is often empty.
           const detail = (stderr.trim() || (cli === 'claude' ? claudeError(stdout) : undefined) || '').slice(-300);
           reject(fail(`${cli} exited with code ${code}${detail ? `: ${detail}` : ''}`));
-        }),
-      );
+        });
+      });
       child.stdin.on('error', () => {}); // EPIPE if the CLI exits before reading
       child.stdin.end(input);
     });

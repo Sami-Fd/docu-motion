@@ -12,7 +12,7 @@ process.stdin.on('end', () => {
     process.stderr.write('not logged in');
     process.exit(2);
   } else if (mode === 'echo') {
-    process.stdout.write(JSON.stringify({args: process.argv.slice(2), input}));
+    process.stdout.write(JSON.stringify({args: process.argv.slice(2), input, cwd: process.cwd()}));
   } else if (mode === 'claude-error') {
     process.stdout.write(JSON.stringify({type: 'result', subtype: 'success', is_error: true, result: 'Invalid API key'}));
   } else if (mode === 'claude-fail') {
