@@ -55,6 +55,7 @@ export async function generate(
   for (const name of STEP_NAMES) {
     if (p.progress.done.includes(name)) continue;
     if (ctx.signal?.aborted) throw new GenerateCancelled();
+    ctx.onProgress({step: name, ratio: 0});
     try {
       p = await steps[name]!(p, full);
     } catch (e) {

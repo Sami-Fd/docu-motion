@@ -62,6 +62,19 @@ describe('generate', () => {
     expect((await loadProject(dir)).facts).toHaveLength(7);
   });
 
+  it('emits ratio 0 before each step runs, then ratio 1 after it', async () => {
+    await saveProject(dir, base);
+    const calls: string[] = [];
+    const seq: string[] = [];
+    const s = stubs(calls);
+    const traced = Object.fromEntries(
+      Object.entries(s).map(([k, f]) => [k, (async (p, c) => (seq.push(`run ${k}`), f!(p, c))) as Step]),
+    );
+    await generate(dir, ctx({onProgress: (e) => e.ratio !== undefined && seq.push(`${e.ratio} ${e.step}`)}), {steps: traced});
+    expect(seq.slice(0, 6)).toEqual(['0 sources', 'run sources', '1 sources', '0 facts', 'run facts', '1 facts']);
+    expect(seq).toHaveLength(STEP_NAMES.length * 3);
+  });
+
   it('has a real step for every name', () => {
     expect(Object.keys(STEPS)).toEqual([...STEP_NAMES]);
   });
