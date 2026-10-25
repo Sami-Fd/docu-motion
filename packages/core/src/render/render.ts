@@ -10,6 +10,7 @@ export async function renderSceneStill(
   p: Project,
   sceneIndex: number,
   atRatio = 0.8,
+  outputDir = path.join(projectDir, 'out', 'stills'),
 ): Promise<string> {
   const scene = p.scenes[sceneIndex];
   if (!scene) throw new Error(`Scene index ${sceneIndex} is out of range (${p.scenes.length} scenes)`);
@@ -18,7 +19,7 @@ export async function renderSceneStill(
   const inputProps = {...film, sceneIndex};
   const composition = await selectComposition({serveUrl, id: 'SceneStill', inputProps});
   const frame = Math.floor(atRatio * (composition.durationInFrames - 1));
-  const output = path.join(projectDir, 'out', 'stills', `${scene.id}.png`);
+  const output = path.join(outputDir, `${scene.id}.png`);
   await fs.mkdir(path.dirname(output), {recursive: true});
   await renderStill({composition, serveUrl, inputProps, frame, output});
   return output;

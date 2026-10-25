@@ -8,6 +8,7 @@ import pixelmatch from 'pixelmatch';
 import {renderStill, selectComposition} from '@remotion/renderer';
 import {SCENE_TYPES, type SceneType, type StyleName} from '@docu-motion/scenes';
 import {renderSceneStill} from '../../src/render/render.js';
+import {MAX_OUTSIDE_PIXELS, pixelsOutsideSafeArea} from '../../src/render/layoutCheck.js';
 import {bundleScenes, invalidateBundle} from '../../src/render/bundle.js';
 import {exampleProject} from './exampleProject.js';
 
@@ -15,14 +16,6 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./__snapshots__/', import.meta.url))
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
 const STYLES: StyleName[] = ['papier', 'craie', 'infographie', 'nuit'];
 const MAX_DIFF_RATIO = 0.005;
-// Safe-area test: everything a scene draws on top of its background (Label zone, content, Source line)
-// must stay inside this rectangle. `title` is exempt: its hills / sea are full-bleed by design.
-// y0 is 50, not 90: the Label (y = 150, 130 px high) starts at y = 85 before its -1.5° tilt, its
-// paper displacement and the nuit glow; measured tops are 58 (nuit) to 75 (papier).
-const SAFE = {x0: 60, x1: 1860, y0: 50, y1: 900};
-// Anti-aliasing tolerance: a channel delta up to this counts as identical; a few odd pixels are allowed.
-const CHANNEL_TOLERANCE = 8;
-const MAX_OUTSIDE_PIXELS = 20;
 const IN_CI = Boolean(process.env.CI);
 
 let root: string;
@@ -114,25 +107,9 @@ describe('scene snapshots', () => {
       for (const type of SCENE_TYPES) {
         if (type === 'title') continue;
         const png = await renderExample(type, style);
-        let outside = 0;
-        const box = {x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity};
-        for (let y = 0; y < png.height; y++) {
-          for (let x = 0; x < png.width; x++) {
-            const i = (y * png.width + x) * 4;
-            let differs = false;
-            for (let c = 0; c < 4 && !differs; c++) {
-              differs = Math.abs(png.data[i + c]! - bg.data[i + c]!) > CHANNEL_TOLERANCE;
-            }
-            if (!differs) continue;
-            box.x0 = Math.min(box.x0, x);
-            box.y0 = Math.min(box.y0, y);
-            box.x1 = Math.max(box.x1, x);
-            box.y1 = Math.max(box.y1, y);
-            if (x < SAFE.x0 || x >= SAFE.x1 || y < SAFE.y0 || y >= SAFE.y1) outside++;
-          }
-        }
+        const outside = pixelsOutsideSafeArea(png, bg);
         worst = Math.max(worst, outside);
-        const line = `${type}-${style}: drawn area x ${box.x0}-${box.x1}, y ${box.y0}-${box.y1}, ${outside} px outside`;
+        const line = `${type}-${style}: ${outside} px outside`;
         if (process.env.SAFE_AREA_VERBOSE) console.log(line);
         if (outside > MAX_OUTSIDE_PIXELS) report.push(line);
       }
