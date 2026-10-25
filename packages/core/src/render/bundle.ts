@@ -72,8 +72,13 @@ export function bundleScenes(projectDir: string, assets: readonly string[] = [])
 }
 
 /** Drop a project's cached bundle and its files so the next render re-bundles its current files. */
+const invalidationListeners: ((projectDir: string) => void)[] = [];
+/** Registers a callback run with the resolved project dir whenever its bundle is invalidated. */
+export const onBundleInvalidated = (fn: (projectDir: string) => void): void => void invalidationListeners.push(fn);
+
 export function invalidateBundle(projectDir: string): void {
   const key = path.resolve(projectDir);
+  for (const fn of invalidationListeners) fn(key);
   cache.delete(key);
   try {
     rmSync(bundleDirOf(key), {recursive: true, force: true});

@@ -69,11 +69,23 @@ describe('layoutStep', () => {
 
   it('replaces its own earlier warning without duplicating, keeps other warnings', async () => {
     const {ctx} = setup();
-    const p = project(['Unverified figure: x', WARN]);
+    const p = project(['custom', WARN]);
     const again = await layoutStep({checkScene: async () => ({outside: 500})})(p, ctx);
-    expect(again.scenes[1]!.warnings).toEqual(['Unverified figure: x', WARN]);
+    expect(again.scenes[1]!.warnings).toEqual(['custom', WARN]);
     const fixed = await layoutStep({checkScene: async () => ({outside: 0})})(p, ctx);
-    expect(fixed.scenes[1]!.warnings).toEqual(['Unverified figure: x']);
+    expect(fixed.scenes[1]!.warnings).toEqual(['custom']);
+  });
+
+  it('a fallback scene regenerated cleanly loses its fallback warning; other warnings survive', async () => {
+    const {ctx} = setup();
+    const FALLBACK = 'Scene could not be generated; simple title used';
+    const p = project(['custom', FALLBACK]);
+    p.scenes[1] = {...p.scenes[1]!, status: 'fallback'};
+    const seq = [500, 0];
+    const checkScene = async (_d: string, _p: Project, i: number) => ({outside: i === 1 ? seq.shift()! : 0});
+    const out = await layoutStep({checkScene})(p, ctx);
+    expect(out.scenes[1]!.status).toBe('ok');
+    expect(out.scenes[1]!.warnings).toEqual(['custom']);
   });
 
   it('stops on cancellation', async () => {

@@ -20,11 +20,7 @@ export function layoutStep(deps: {checkScene?: typeof checkSceneLayout} = {}): S
       let {outside} = await check(ctx.projectDir, cur, i);
       if (outside > MAX_OUTSIDE_PIXELS) {
         const r = await generateSceneSpec(cur, i, ctx, FEEDBACK);
-        const before = cur.scenes[i]!;
-        const applied = applySceneResult(before, r, cur);
-        // Other steps' warnings are kept verbatim; only a fresh fallback warning of the regeneration is added.
-        const extra = r.warning && !before.warnings.includes(r.warning) ? [r.warning] : [];
-        cur = put({...applied, warnings: [...before.warnings, ...extra]});
+        cur = put(applySceneResult(cur.scenes[i]!, r, cur));
         ({outside} = await check(ctx.projectDir, cur, i));
         if (outside > MAX_OUTSIDE_PIXELS) {
           const s = cur.scenes[i]!;
