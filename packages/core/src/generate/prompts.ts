@@ -70,7 +70,7 @@ export function writeScript(
   };
 }
 
-const LIMITS: Record<SceneType, string> = {
+export const LIMITS: Record<SceneType, string> = {
   title: 'title max 48 chars; optional subtitle max 70; decor is "hills", "sea" or "none"; characters is an integer 0 to 6',
   bars: 'title max 48; 2 to 8 bars; label max 18; value >= 0; optional unit max 8',
   donut: 'title max 48; 2 to 6 parts; label max 26; values > 0 and summing to 100 (+-0.5)',

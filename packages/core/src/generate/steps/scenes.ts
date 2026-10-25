@@ -59,20 +59,26 @@ export async function generateSceneSpec(
   }
 }
 
+type Scene = Project['scenes'][number];
+
+/** Applies a generation result to a scene; replaces this step's own warnings, keeps the others. */
+export function applySceneResult(scene: Scene, result: Result, p: Project): Scene {
+  const warnings = scene.warnings.filter((w) => w !== FALLBACK_WARNING && !w.startsWith(UNVERIFIED));
+  if (result.warning) warnings.push(result.warning);
+  for (const id of scene.factIds) {
+    const f = p.facts.find((x) => x.id === id);
+    if (f && !f.verified) warnings.push(`${UNVERIFIED}${f.statement}`);
+  }
+  return {...scene, spec: withSourceLine(result.spec, p, scene.factIds), status: result.status, warnings};
+}
+
 export const scenesStep: Step = async (p, ctx) => {
   const n = p.scenes.length;
-  const scenes = [];
+  const scenes: Scene[] = [];
   for (let i = 0; i < n; i++) {
     ctx.signal?.throwIfAborted();
-    const s = p.scenes[i]!;
     const r = await generateSceneSpec(p, i, ctx);
-    const warnings = s.warnings.filter((w) => w !== FALLBACK_WARNING && !w.startsWith(UNVERIFIED));
-    if (r.warning) warnings.push(r.warning);
-    for (const id of s.factIds) {
-      const f = p.facts.find((x) => x.id === id);
-      if (f && !f.verified) warnings.push(`${UNVERIFIED}${f.statement}`);
-    }
-    scenes.push({...s, spec: r.spec, status: r.status, warnings});
+    scenes.push(applySceneResult(p.scenes[i]!, r, p));
     ctx.onProgress({step: 'scenes', ratio: (i + 1) / n});
   }
   return {...p, scenes};

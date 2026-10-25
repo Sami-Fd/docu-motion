@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {EXAMPLES, SceneSpecSchema, type SceneSpec} from '@docu-motion/scenes';
 import type {StepContext} from '../../src/generate/context.js';
-import {generateSceneSpec, scenesStep, withSourceLine} from '../../src/generate/steps/scenes.js';
+import {applySceneResult, generateSceneSpec, scenesStep, withSourceLine} from '../../src/generate/steps/scenes.js';
 import {createFakeProvider} from '../../src/llm/fake.js';
 import {ProviderError} from '../../src/llm/types.js';
 import type {Project} from '../../src/project/schema.js';
@@ -158,6 +158,38 @@ describe('scenesStep', () => {
     const ac = new AbortController();
     ac.abort();
     await expect(scenesStep(project(), {...ctx, signal: ac.signal})).rejects.toThrow();
+  });
+
+  it('rethrows an AbortError mid-run without producing a fallback', async () => {
+    const proj = project();
+    proj.scenes.push({...proj.scenes[0]!, id: 's02'});
+    const {ctx} = setup(() => bars);
+    let calls = 0;
+    const llm = {
+      ...ctx.llm,
+      generateObject: (async (a: never) => {
+        if (++calls === 2) throw new DOMException('aborted', 'AbortError');
+        return ctx.llm.generateObject(a);
+      }) as typeof ctx.llm.generateObject,
+    };
+    await expect(scenesStep(proj, {...ctx, llm})).rejects.toMatchObject({name: 'AbortError'});
+    expect(calls).toBe(2);
+  });
+
+  it('rethrows a ProviderError after exactly one LLM call', async () => {
+    const {ctx, prompts} = setup(() => {
+      throw new ProviderError('auth', {provider: 'x', transient: false, status: 401});
+    });
+    await expect(scenesStep(project(), ctx)).rejects.toBeInstanceOf(ProviderError);
+    expect(prompts).toHaveLength(1);
+  });
+
+  it('applySceneResult replaces own warnings and keeps others', () => {
+    const proj = project({factIds: ['f1', 'f2'], warnings: ['custom', 'Unverified figure: old', 'Scene could not be generated; simple title used']});
+    const out = applySceneResult(proj.scenes[0]!, {spec: bars as SceneSpec, status: 'ok'}, proj);
+    expect((out.spec as {source?: string}).source).toBe('INSEE');
+    expect(out.status).toBe('ok');
+    expect(out.warnings).toEqual(['custom', 'Unverified figure: Beta vaut 2 environ']);
   });
 
   it('passes the signal to the LLM', async () => {
