@@ -4,4 +4,4 @@ data
 out
 *.mp4
 .env
-config.json
+/config.json
