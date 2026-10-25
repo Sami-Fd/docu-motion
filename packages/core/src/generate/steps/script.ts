@@ -11,16 +11,46 @@ const TITLE_MAX = 48;
 export const sceneCount = (targetMinutes: number): number =>
   Math.min(12, Math.max(8, Math.round((targetMinutes * 60) / 16)));
 
-const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length;
+// Scripts written without spaces between words: whitespace splitting would see one "word" per sentence.
+const NO_SPACE_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
-export const ScriptOutputSchema = (n: number) =>
+function segmenterFor(language: string): Intl.Segmenter {
+  try {
+    return new Intl.Segmenter(language, {granularity: 'word'});
+  } catch {
+    return new Intl.Segmenter(undefined, {granularity: 'word'}); // invalid language tag
+  }
+}
+
+/**
+ * Words in a narration. Whitespace-separated tokens count as one word each (unchanged for space-separated
+ * languages); a token in a script written without spaces (Chinese, Japanese, Thai…) counts its
+ * word-like segments from Intl.Segmenter.
+ */
+export function wordCount(s: string, language: string): number {
+  let segmenter: Intl.Segmenter | undefined;
+  let n = 0;
+  for (const token of s.trim().split(/\s+/).filter(Boolean)) {
+    if (!NO_SPACE_SCRIPT.test(token)) {
+      n++;
+      continue;
+    }
+    segmenter ??= segmenterFor(language);
+    let k = 0;
+    for (const seg of segmenter.segment(token)) if (seg.isWordLike) k++;
+    n += Math.max(1, k);
+  }
+  return n;
+}
+
+export const ScriptOutputSchema = (n: number, language = 'en') =>
   z
     .object({
       scenes: z.array(z.object({narration: z.string(), factIds: z.array(z.string()).max(6)})).length(n),
     })
     .superRefine((v, ctx) => {
       v.scenes.forEach((s, i) => {
-        const w = wordCount(s.narration);
+        const w = wordCount(s.narration, language);
         if (w < MIN_WORDS || w > MAX_WORDS) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -40,7 +70,7 @@ export const scriptStep: Step = async (p, ctx) => {
   ctx.signal?.throwIfAborted();
   const n = sceneCount(p.brief.targetMinutes);
   const out = await ctx.llm.generateObject({
-    schema: ScriptOutputSchema(n),
+    schema: ScriptOutputSchema(n, p.brief.language),
     ...writeScript(p.brief.topic, p.brief.language, n, p.facts),
     signal: ctx.signal,
   });

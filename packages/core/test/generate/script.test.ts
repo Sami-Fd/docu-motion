@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {estimateDurationFrames, SceneSpecSchema} from '@docu-motion/scenes';
 import type {StepContext} from '../../src/generate/context.js';
-import {sceneCount, scriptStep} from '../../src/generate/steps/script.js';
+import {sceneCount, ScriptOutputSchema, scriptStep, wordCount} from '../../src/generate/steps/script.js';
 import {createFakeProvider} from '../../src/llm/fake.js';
 import type {Project} from '../../src/project/schema.js';
 import {SettingsSchema} from '../../src/settings/settings.js';
@@ -42,6 +42,34 @@ describe('sceneCount', () => {
     expect(sceneCount(1)).toBe(8);
     expect(sceneCount(3)).toBe(11);
     expect(sceneCount(10)).toBe(12);
+  });
+});
+
+describe('wordCount', () => {
+  it('counts space-separated words as before', () => {
+    expect(wordCount('  The   quick brown fox, jumps!  ', 'en')).toBe(5);
+    expect(wordCount(words(30), 'fr')).toBe(30);
+    // unchanged whitespace semantics: a lone punctuation token still counts
+    expect(wordCount("L'État finance 9,2 % de la sécu — oui", 'fr')).toBe(9);
+  });
+
+  it('counts Chinese and Japanese words without spaces', () => {
+    const zh = '我们今天讨论经济问题。'.repeat(6);
+    expect(zh.trim().split(/\s+/).length).toBe(1);
+    expect(wordCount(zh, 'zh')).toBeGreaterThanOrEqual(25);
+    expect(wordCount('今日は経済について話します。'.repeat(4), 'ja')).toBeGreaterThanOrEqual(12);
+  });
+
+  it('accepts a CJK narration in the script schema', () => {
+    const zh = '我们今天讨论经济问题。'.repeat(6);
+    const r = ScriptOutputSchema(1, 'zh').safeParse({scenes: [{narration: zh, factIds: []}]});
+    expect(r.success).toBe(true);
+    const en = ScriptOutputSchema(1, 'en').safeParse({scenes: [{narration: words(10), factIds: []}]});
+    expect(en.success).toBe(false);
+  });
+
+  it('survives an invalid language tag', () => {
+    expect(wordCount('one two three', 'not a tag!')).toBe(3);
   });
 });
 
