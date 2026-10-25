@@ -20,8 +20,12 @@ export function layoutStep(deps: {checkScene?: typeof checkSceneLayout} = {}): S
       let {outside} = await check(ctx.projectDir, cur, i);
       if (outside > MAX_OUTSIDE_PIXELS) {
         const r = await generateSceneSpec(cur, i, ctx, FEEDBACK);
-        cur = put(applySceneResult(cur.scenes[i]!, r, cur));
-        ({outside} = await check(ctx.projectDir, cur, i));
+        // An unusable regeneration (LlmOutputError → fallback) keeps the original spec:
+        // a slightly overflowing data scene beats a plain fallback title.
+        if (r.status !== 'fallback') {
+          cur = put(applySceneResult(cur.scenes[i]!, r, cur));
+          ({outside} = await check(ctx.projectDir, cur, i));
+        }
         if (outside > MAX_OUTSIDE_PIXELS) {
           const s = cur.scenes[i]!;
           cur = put({...s, warnings: [...s.warnings, LAYOUT_WARNING]});

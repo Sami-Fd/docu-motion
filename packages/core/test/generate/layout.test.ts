@@ -88,6 +88,18 @@ describe('layoutStep', () => {
     expect(out.scenes[1]!.warnings).toEqual(['custom']);
   });
 
+  it('keeps the original spec with a warning when the regeneration yields unusable output', async () => {
+    const {ctx} = setup();
+    const llm = createFakeProvider(() => ({type: 'nope'}));
+    let checks = 0;
+    const checkScene = async (_d: string, _p: Project, i: number) => (i === 0 && checks++, {outside: i === 0 ? 500 : 0});
+    const out = await layoutStep({checkScene})(project(), {...ctx, llm});
+    expect(out.scenes[0]!.spec).toEqual(bars);
+    expect(out.scenes[0]!.status).toBe('ok');
+    expect(out.scenes[0]!.warnings).toEqual([WARN]);
+    expect(checks).toBe(1);
+  });
+
   it('stops on cancellation', async () => {
     const {ctx} = setup();
     const ac = new AbortController();
