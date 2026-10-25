@@ -118,6 +118,7 @@ async function fromUrl(input: IngestInput, deps: IngestDeps): Promise<{title?: s
   const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   // Rejects on timeout even if the injected fetch or the body stream ignores the signal.
   const aborted = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -125,7 +126,8 @@ async function fromUrl(input: IngestInput, deps: IngestDeps): Promise<{title?: s
       controller.abort(err);
       reject(err);
     }, timeoutMs);
-    deps.signal?.addEventListener('abort', () => reject(deps.signal!.reason ?? new DOMException('Aborted', 'AbortError')), {once: true});
+    onAbort = () => reject(deps.signal!.reason ?? new DOMException('Aborted', 'AbortError'));
+    deps.signal?.addEventListener('abort', onAbort, {once: true});
   });
   aborted.catch(() => {});
   const fetchSignal = deps.signal ? AbortSignal.any([controller.signal, deps.signal]) : controller.signal;
@@ -148,6 +150,7 @@ async function fromUrl(input: IngestInput, deps: IngestDeps): Promise<{title?: s
     return type === 'text/html' ? htmlToText(body) : {text: body};
   } finally {
     clearTimeout(timer);
+    if (onAbort) deps.signal?.removeEventListener('abort', onAbort);
   }
 }
 

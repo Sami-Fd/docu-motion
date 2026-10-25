@@ -115,6 +115,23 @@ describe('ingestSource', () => {
     expect(text(dir, 's1')).toBe('a b\n\nc d e');
   });
 
+  it('removes its abort listener from the caller signal when done', async () => {
+    const dir = tmp();
+    const ac = new AbortController();
+    let added = 0;
+    let removed = 0;
+    const add = ac.signal.addEventListener.bind(ac.signal);
+    const remove = ac.signal.removeEventListener.bind(ac.signal);
+    ac.signal.addEventListener = ((...a: Parameters<typeof add>) => (a[0] === 'abort' && added++, add(...a))) as typeof add;
+    ac.signal.removeEventListener = ((...a: Parameters<typeof remove>) => (a[0] === 'abort' && removed++, remove(...a))) as typeof remove;
+    await ingestSource(dir, {id: 's1', uri: 'https://x.test/a.txt', kind: 'url'}, {
+      fetch: fetchOf(() => resp('hello', 'text/plain')),
+      signal: ac.signal,
+    });
+    expect(added).toBeGreaterThan(0);
+    expect(removed).toBe(added);
+  });
+
   it('reads a local txt file in a dir with spaces and accents', async () => {
     const dir = tmp();
     writeFileSync(path.join(dir, 'notes é.txt'), 'Hello   monde');
