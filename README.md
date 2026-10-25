@@ -41,7 +41,7 @@ Options: `--style papier|craie|infographie|nuit` (default `papier`), `--length <
 **Settings.** Choose the default provider and web search in `data/config.json` (git-ignored):
 
 ```json
-{"provider": {"kind": "api", "provider": "anthropic", "model": "claude-sonnet-4-5"}, "defaultLanguage": "fr", "search": "auto"}
+{"provider": {"kind": "api", "provider": "anthropic", "model": "claude-sonnet-5-5"}, "defaultLanguage": "fr", "search": "auto"}
 ```
 
 `search` is `auto`, `native`, `tavily`, `brave` or `off`. `--provider` overrides the file.
