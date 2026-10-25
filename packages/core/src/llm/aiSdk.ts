@@ -73,7 +73,12 @@ export function toProviderError(e: unknown, provider: string, secrets: string[])
     const status = e.statusCode;
     const transient = status === 429 || status === 408 || (status !== undefined && status >= 500) ||
       (status === undefined && (e.isRetryable || (errorCode(e) !== undefined && TRANSIENT_CODES.has(errorCode(e)!))));
-    return new ProviderError(redact(e.message, secrets), {provider, transient, status});
+    const label = LABELS[provider] ?? provider;
+    const hint = (status === 401 || status === 403) && ENV_VARS[provider]
+      ? ` — check the key in Settings or ${ENV_VARS[provider]}`
+      : '';
+    const head = status !== undefined ? `${label} API error (HTTP ${status})` : `${label} API error`;
+    return new ProviderError(redact(`${head}: ${e.message}${hint}`, secrets), {provider, transient, status});
   }
   const message = e instanceof Error ? e.message : String(e);
   const name = e instanceof Error ? e.name : '';
@@ -97,7 +102,8 @@ export function buildModel(provider: string, modelId: string, settings: Settings
     case 'mistral':
       return createMistral({apiKey: keys.mistral})(modelId);
     case 'openrouter':
-      return createOpenRouter({apiKey: keys.openrouter}).chat(modelId);
+      // OpenRouter defaults json_schema.strict to true, which rejects optional properties and a root anyOf.
+      return createOpenRouter({apiKey: keys.openrouter}).chat(modelId, {structuredOutputs: {strict: false}});
     case 'ollama':
       return createOpenAICompatible({name: 'ollama', baseURL: settings.ollamaBaseUrl})(modelId);
     default:
@@ -123,6 +129,9 @@ export function createApiProvider(
   const model = deps.languageModel ?? buildModel(provider, modelId, settings);
   const secrets = Object.values(settings.keys).filter((v): v is string => typeof v === 'string' && v.length > 0);
   const wrap = (e: unknown) => toProviderError(e, provider, secrets);
+  // @ai-sdk/openai defaults strictJsonSchema to true; strict mode rejects our optional properties and
+  // the root anyOf of SceneSpecSchema with HTTP 400. Validation happens on our side with Zod anyway.
+  const structuredOptions = provider === 'openai' ? {openai: {strictJsonSchema: false}} : undefined;
 
   return makeProvider(
     {
@@ -138,12 +147,16 @@ export function createApiProvider(
             prompt,
             abortSignal: signal,
             maxRetries: 0,
+            ...(structuredOptions ? {providerOptions: structuredOptions} : {}),
           });
           return r.output;
         } catch (e) {
           const unparseable =
             NoObjectGeneratedError.isInstance(e) || JSONParseError.isInstance(e) || TypeValidationError.isInstance(e);
-          if (!unparseable) throw wrap(e);
+          // A 400 on the structured call usually means the provider refused the schema itself
+          // (strict mode, unsupported keywords): retry once as plain text with the schema in the prompt.
+          const schemaRejected = APICallError.isInstance(e) && e.statusCode === 400;
+          if (!unparseable && !schemaRejected) throw wrap(e);
         }
         // Fallback: ask for plain text; makeProvider extracts and validates the JSON.
         try {

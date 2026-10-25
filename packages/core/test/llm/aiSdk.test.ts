@@ -2,7 +2,7 @@ import {APICallError} from 'ai';
 import {MockLanguageModelV4} from 'ai/test';
 import {describe, expect, it, vi} from 'vitest';
 import {z} from 'zod';
-import {createApiProvider, DEFAULT_MODELS} from '../../src/llm/aiSdk.js';
+import {buildModel, createApiProvider, DEFAULT_MODELS, toProviderError} from '../../src/llm/aiSdk.js';
 import {ProviderError} from '../../src/llm/types.js';
 import {SettingsSchema} from '../../src/settings/settings.js';
 
@@ -42,6 +42,60 @@ describe('createApiProvider', () => {
     const p = createApiProvider(ref, settings, {languageModel: model});
     expect(await p.generateObject({schema, system: 's', prompt: 'p'})).toEqual({n: 7});
     expect(calls).toBe(2);
+  });
+
+  it('falls back to text when the structured call is rejected with HTTP 400 (strict schema)', async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        if (++calls === 1) throw apiErr(400, "Invalid schema for response_format 'facts': 'required' is required");
+        return ok('Sure:\n```json\n{"n": 9}\n```');
+      },
+    });
+    const p = createApiProvider(ref, settings, {languageModel: model, sleep: async () => {}});
+    expect(await p.generateObject({schema, system: 's', prompt: 'p'})).toEqual({n: 9});
+    expect(calls).toBe(2);
+    expect(model.doGenerateCalls[0]!.responseFormat?.type).toBe('json');
+    expect(model.doGenerateCalls[1]!.responseFormat?.type ?? 'text').toBe('text');
+  });
+
+  it('does not fall back on a 401 from the structured call', async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calls++;
+        throw apiErr(401);
+      },
+    });
+    const p = createApiProvider(ref, settings, {languageModel: model, sleep: async () => {}});
+    await expect(p.generateObject({schema, system: 's', prompt: 'p'})).rejects.toBeInstanceOf(ProviderError);
+    expect(calls).toBe(1);
+  });
+
+  it('turns off strict JSON schema for OpenAI structured calls', async () => {
+    const model = new MockLanguageModelV4({doGenerate: ok('{"n": 4}')});
+    const p = createApiProvider(ref, settings, {languageModel: model});
+    await p.generateObject({schema, system: 's', prompt: 'p'});
+    expect(model.doGenerateCalls[0]!.providerOptions).toEqual({openai: {strictJsonSchema: false}});
+  });
+
+  it('turns off strict structured outputs for OpenRouter models', () => {
+    const s = SettingsSchema.parse({keys: {openrouter: 'e'}});
+    const m = buildModel('openrouter', 'x/y', s) as unknown as {settings: {structuredOutputs?: {strict?: boolean}}};
+    expect(m.settings.structuredOutputs?.strict).toBe(false);
+  });
+
+  it('names the provider and status in API errors, with a key hint for 401/403', () => {
+    const e401 = toProviderError(apiErr(401, 'Invalid x-api-key sk-secret-123'), 'anthropic', ['sk-secret-123']) as Error;
+    expect(e401.message).toMatch(/^Anthropic API error \(HTTP 401\): /);
+    expect(e401.message).toContain('check the key in Settings or ANTHROPIC_API_KEY');
+    expect(e401.message).not.toContain('sk-secret-123');
+    const e403 = toProviderError(apiErr(403), 'openai', []) as Error;
+    expect(e403.message).toContain('check the key in Settings or OPENAI_API_KEY');
+    const e500 = toProviderError(apiErr(500, 'overloaded'), 'mistral', []) as Error;
+    expect(e500.message).toBe('Mistral API error (HTTP 500): overloaded');
+    const net = new APICallError({message: 'Cannot connect', url: 'https://x', requestBodyValues: {}, isRetryable: true});
+    expect((toProviderError(net, 'google', []) as Error).message).toBe('Google API error: Cannot connect');
   });
 
   it('retries 429 twice then succeeds', async () => {
