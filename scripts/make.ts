@@ -3,7 +3,7 @@
 //     [--language <code>] [--provider <name>] [--model <id>] [--voice none] [--data <dir>] [--resume <projectDir>] [--check]
 // Test-only hooks (never set outside tests): DOCU_MOTION_FAIL_AT=<step> makes that step throw (read only here);
 // DOCU_MOTION_FAKE_LOG=<file> makes the fake provider log its calls (read only by demoResponder).
-import {existsSync} from 'node:fs';
+import {existsSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
@@ -15,12 +15,13 @@ import {
   createProject,
   createProvider,
   defaultDataDir,
+  explainWebSearch,
+  formatWarningSummary,
   generate,
   loadProject,
   loadSettings,
   nativeSearchFor,
   requireProvider,
-  resolveWebSearch,
   redact,
   testConnection,
   type ProviderRef,
@@ -93,6 +94,25 @@ function parseArgs(argv: string[]): Args {
   return out;
 }
 
+/** A source must be an http(s) URL or an existing file: a typo must not silently become a knowledge-only video. */
+function checkSource(s: string): void {
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      new URL(s);
+      return;
+    } catch {
+      usage(`Invalid source URL "${s}"`);
+    }
+  }
+  let isFile = false;
+  try {
+    isFile = statSync(s).isFile();
+  } catch {
+    // missing
+  }
+  if (!isFile) usage(`Source not found: "${s}" — expected an http(s) URL or an existing file`);
+}
+
 async function main(): Promise<number> {
   const envFile = path.join(REPO, '.env');
   if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -113,6 +133,8 @@ async function main(): Promise<number> {
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 10) usage(`Invalid --length "${args.length}": expected a number of minutes between 1 and 10`);
   }
   if (args.voice !== undefined && args.voice !== 'none') usage(`Voice engine "${args.voice}" arrives in Plan 3; use --voice none`);
+  if (args.resume !== undefined && args.sources.length > 0) usage('--sources cannot be combined with --resume');
+  for (const s of args.sources) checkSource(s);
   const explicitRef = args.provider !== undefined ? providerRefFor(args.provider, args.model) : undefined;
 
   const dataDir = path.resolve(args.data ?? defaultDataDir());
@@ -131,26 +153,37 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  let projectDir: string;
   let ref: ProviderRef;
-  let webSearch: string;
+  let resumed: {dir: string; webSearch: string} | undefined;
   if (args.resume !== undefined) {
-    projectDir = path.resolve(args.resume);
+    const dir = path.resolve(args.resume);
     try {
-      const existing = await loadProject(projectDir);
+      const existing = await loadProject(dir);
       ref = existing.brief.provider;
-      webSearch = existing.brief.webSearch;
+      resumed = {dir, webSearch: existing.brief.webSearch};
     } catch (e) {
       if (e instanceof ProjectLoadError) {
         usage(`${e.issues.map((i) => `${i.path || '(root)'}: ${i.message}`).join('\n')}\n${e.file}`);
       }
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') usage(`No project.json found in ${projectDir}`);
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') usage(`No project.json found in ${dir}`);
       throw e;
     }
   } else {
     ref = explicitRef ?? withModel(requireProvider(settings));
-    const search = resolveWebSearch(settings, ref, args.sources.length > 0);
+  }
+
+  // Build the provider before creating anything on disk: a missing key must not leave an orphan project.
+  const llm = createProvider(ref, settings);
+
+  let projectDir: string;
+  let webSearch: string;
+  if (resumed) {
+    ({dir: projectDir, webSearch} = resumed);
+    console.error(`Web search: ${webSearch}`);
+  } else {
+    const {mode: search, reason} = explainWebSearch(settings, ref, args.sources.length > 0);
     webSearch = search;
+    console.error(`Web search: ${search}${reason ? ` (${reason})` : ''}`);
     projectDir = await createProject(dataDir, {
       topic: args.topic!,
       style: style ?? 'papier',
@@ -166,7 +199,8 @@ async function main(): Promise<number> {
 
   const resumeHint = `npm run make -- --resume "${projectDir}"`;
   const controller = new AbortController();
-  process.on('SIGINT', () => controller.abort());
+  // once: a second Ctrl+C gets Node's default handler and force-quits.
+  process.once('SIGINT', () => controller.abort());
 
   const failAt = process.env.DOCU_MOTION_FAIL_AT;
   const steps: Partial<Record<StepName, Step>> = {};
@@ -177,11 +211,12 @@ async function main(): Promise<number> {
   }
 
   let lastStep: StepName | undefined;
+  let done: Awaited<ReturnType<typeof generate>>;
   try {
-    await generate(
+    done = await generate(
       projectDir,
       {
-        llm: createProvider(ref, settings),
+        llm,
         settings,
         fetch,
         signal: controller.signal,
@@ -208,6 +243,8 @@ async function main(): Promise<number> {
     }
     throw e;
   }
+  const summary = formatWarningSummary(done);
+  if (summary) console.error(summary);
   console.log(`OK ${path.join(projectDir, 'out', 'video.mp4')}`);
   return 0;
 }

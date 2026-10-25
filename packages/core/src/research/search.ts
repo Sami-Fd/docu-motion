@@ -112,21 +112,34 @@ export function nativeSearchFor(
   };
 }
 
-export function resolveWebSearch(
+export type WebSearchMode = 'off' | 'native' | 'tavily' | 'brave';
+
+/**
+ * The web search mode a new project uses, and why it differs from the setting (user sources given,
+ * or an explicit choice that cannot be used and falls back to the auto chain).
+ */
+export function explainWebSearch(
   settings: Settings,
   ref: ProviderRef,
   hasUserSources: boolean,
-): 'off' | 'native' | 'tavily' | 'brave' {
-  if (hasUserSources) return 'off';
+): {mode: WebSearchMode; reason?: string} {
+  if (hasUserSources) return {mode: 'off', reason: 'sources given'};
   const native = ref.kind === 'api' && ['anthropic', 'openai', 'google'].includes(ref.provider);
   const s = settings.search;
-  if (s === 'off') return 'off';
-  if (s === 'native' && native) return 'native';
-  if (s === 'tavily' && settings.keys.tavily) return 'tavily';
-  if (s === 'brave' && settings.keys.brave) return 'brave';
+  if (s === 'off') return {mode: 'off'};
+  if (s === 'native' && native) return {mode: 'native'};
+  if (s === 'tavily' && settings.keys.tavily) return {mode: 'tavily'};
+  if (s === 'brave' && settings.keys.brave) return {mode: 'brave'};
   // auto, or an explicit choice that cannot be used: fall back to the auto chain
-  if (native) return 'native';
-  if (settings.keys.tavily) return 'tavily';
-  if (settings.keys.brave) return 'brave';
-  return 'off';
+  const mode: WebSearchMode = native ? 'native' : settings.keys.tavily ? 'tavily' : settings.keys.brave ? 'brave' : 'off';
+  if (s === 'auto') return {mode};
+  const why =
+    s === 'native'
+      ? `search "native" needs the anthropic, openai or google API provider, not ${ref.kind}:${ref.provider}`
+      : `search "${s}" has no key (Settings or ${s === 'tavily' ? 'TAVILY_API_KEY' : 'BRAVE_API_KEY'})`;
+  return {mode, reason: `${why}; falling back to ${mode}`};
+}
+
+export function resolveWebSearch(settings: Settings, ref: ProviderRef, hasUserSources: boolean): WebSearchMode {
+  return explainWebSearch(settings, ref, hasUserSources).mode;
 }

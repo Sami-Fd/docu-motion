@@ -41,12 +41,14 @@ afterAll(async () => {
 });
 
 const base = (topic: string) => [topic, '--provider', 'fake', '--data', data];
+const projectDirs = async () => fs.readdir(path.join(data, 'projects')).catch(() => [] as string[]);
 
 describe('make CLI', () => {
   it('generates a silent video', async () => {
     const r = await runMake(base('La dette publique française'));
     expect(r.stderr).toContain('[3/7] script');
     expect(r.code, r.stderr).toBe(0);
+    expect(r.stderr).toMatch(/^Web search: off$/m);
     const mp4 = okPath(r.stdout);
     expect(mp4).toBeTruthy();
     const projectDir = path.dirname(path.dirname(mp4!));
@@ -59,6 +61,12 @@ describe('make CLI', () => {
     expect(p.scenes).toHaveLength(11);
     expect(new Set(p.scenes.map((s) => s.spec.type))).toEqual(new Set(SCENE_TYPES));
     expect(p.progress.done).toHaveLength(7);
+    // per-scene warning summary on stderr; knowledge-only facts are unverified, so every cited figure warns
+    const warned = p.scenes.filter((s) => s.warnings.length > 0);
+    expect(warned.length).toBeGreaterThan(0);
+    expect(r.stderr).toContain(`Warnings in ${warned.length} of ${p.scenes.length} scenes:`);
+    for (const s of warned) for (const w of s.warnings) expect(r.stderr).toContain(`  ${s.id}: ${w}`);
+    expect(r.stderr).toContain(': Unverified figure: ');
   }, 600_000);
 
   it('resumes after a failed step without repeating finished work', async () => {
@@ -89,6 +97,22 @@ describe('make CLI', () => {
     const r = await runMake([...base('Sujet'), '--length', '30']);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('--length');
+  }, 60_000);
+
+  it('rejects a source that is neither a URL nor an existing file, creating no project', async () => {
+    const before = await projectDirs();
+    const r = await runMake([...base('Sujet'), '--sources', 'definitely-missing-notes.pdf']);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Source not found: "definitely-missing-notes.pdf"');
+    expect(await projectDirs()).toEqual(before);
+  }, 60_000);
+
+  it('fails on a missing API key before creating a project folder', async () => {
+    const before = await projectDirs();
+    const r = await runMake(['Sujet', '--provider', 'mistral', '--data', data], {MISTRAL_API_KEY: ''});
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('MISTRAL_API_KEY');
+    expect(await projectDirs()).toEqual(before);
   }, 60_000);
 
   it('rejects an unknown style', async () => {

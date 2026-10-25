@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {MockLanguageModelV4} from 'ai/test';
-import {braveSearch, nativeSearchFor, resolveWebSearch, sourcesToHits, tavilySearch} from '../../src/research/search.js';
+import {braveSearch, explainWebSearch, nativeSearchFor, resolveWebSearch, sourcesToHits, tavilySearch} from '../../src/research/search.js';
 import {SettingsSchema} from '../../src/settings/settings.js';
 
 const settings = (o: Record<string, unknown> = {}) => SettingsSchema.parse(o);
@@ -39,6 +39,26 @@ describe('resolveWebSearch', () => {
   });
   it('auto + cli provider never picks native', () => {
     expect(resolveWebSearch(settings(), {kind: 'cli', provider: 'anthropic'}, false)).toBe('off');
+  });
+});
+
+describe('explainWebSearch', () => {
+  it('gives no reason when the setting is usable, auto or off', () => {
+    expect(explainWebSearch(settings(), api('anthropic'), false)).toEqual({mode: 'native'});
+    expect(explainWebSearch(settings({search: 'off'}), api('anthropic'), false)).toEqual({mode: 'off'});
+    expect(explainWebSearch(settings({search: 'brave', keys: {brave: 'brave-12345678'}}), api('mistral'), false)).toEqual({mode: 'brave'});
+  });
+  it('explains user sources', () => {
+    expect(explainWebSearch(settings({search: 'tavily'}), api('anthropic'), true)).toEqual({mode: 'off', reason: 'sources given'});
+  });
+  it('explains why an explicit setting could not be used', () => {
+    const native = explainWebSearch(settings({search: 'native', keys: {tavily: 'tvly-12345678'}}), api('mistral'), false);
+    expect(native.mode).toBe('tavily');
+    expect(native.reason).toMatch(/"native".*anthropic, openai or google/);
+    const brave = explainWebSearch(settings({search: 'brave'}), api('mistral'), false);
+    expect(brave).toEqual({mode: 'off', reason: expect.stringContaining('BRAVE_API_KEY')});
+    const tavily = explainWebSearch(settings({search: 'tavily'}), api('anthropic'), false);
+    expect(tavily).toEqual({mode: 'native', reason: expect.stringContaining('TAVILY_API_KEY')});
   });
 });
 
