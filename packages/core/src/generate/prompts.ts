@@ -1,3 +1,4 @@
+import {EXAMPLES, SCENE_TYPES, type SceneType} from '@docu-motion/scenes';
 export type Prompt = {system: string; prompt: string};
 
 export function searchQueries(topic: string, language: string): Prompt {
@@ -66,5 +67,43 @@ export function writeScript(
       '- "factIds" lists the ids of the facts the scene relies on (at most 6). Use only the ids listed below.\n' +
       '- Build a clear arc: hook, explanation, key figures, conclusion.\n\n' +
       `Facts:\n${lines}`,
+  };
+}
+
+const LIMITS: Record<SceneType, string> = {
+  title: 'title max 48 chars; optional subtitle max 70; decor is "hills", "sea" or "none"; characters is an integer 0 to 6',
+  bars: 'title max 48; 2 to 8 bars; label max 18; value >= 0; optional unit max 8',
+  donut: 'title max 48; 2 to 6 parts; label max 26; values > 0 and summing to 100 (+-0.5)',
+  counter: 'title max 48; value is a number; optional prefix max 4 and suffix max 10; label max 60',
+  pictograms: 'title max 48; 1 to 2 groups; label max 24; count is an integer 1 to 12; elderly is a boolean; optional ratio max 8',
+  comparison: 'title max 48; left and right each have heading max 24, value max 12, optional caption max 40',
+  quote: 'title max 48; text max 180; author max 40',
+  timeline: 'title max 48; 3 to 6 events; date max 10; label max 28',
+  list: 'title max 48; 2 to 5 items; text max 60; icon is one of coin, drop, sun, cloud, character, none',
+};
+
+export function fillScene(
+  narration: string,
+  language: string,
+  facts: {id: string; statement: string; value?: string}[],
+  feedback?: string,
+): Prompt {
+  const lines = facts.map((f) => `${f.id}: ${f.statement}${f.value ? ` (${f.value})` : ''}`).join('\n') || '(none)';
+  const types = SCENE_TYPES.map((t) => `- ${t} (${LIMITS[t]}): ${JSON.stringify(EXAMPLES[t])}`).join('\n');
+  return {
+    system:
+      'You design one animated infographic scene for an explainer video. Reply with JSON only. ' +
+      `Write all on-screen text in this language: ${language}.`,
+    prompt:
+      `Narration of the scene:\n${narration}\n\nFacts used:\n${lines}\n\n` +
+      'Pick the scene type that best shows what the narration says, and fill it. Return one JSON object whose "type" is one of the types below. ' +
+      'Example of each type, with its field limits:\n' +
+      `${types}\n\n` +
+      'Rules:\n' +
+      '- Every "cue" must be a word or short phrase copied exactly from the narration (at most 40 characters); it times the animation.\n' +
+      '- Use only figures from the narration and the facts above. Do not invent numbers.\n' +
+      '- Do not set a "source" field: the app sets it.\n' +
+      '- Respect the field limits; keep texts short.' +
+      (feedback ? `\n\nUser feedback to apply:\n${feedback}` : ''),
   };
 }

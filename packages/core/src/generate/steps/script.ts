@@ -2,6 +2,7 @@ import {estimateDurationFrames} from '@docu-motion/scenes';
 import {z} from 'zod';
 import type {Step} from '../context.js';
 import {writeScript} from '../prompts.js';
+import {cutOnWord} from '../text.js';
 
 const MIN_WORDS = 25;
 const MAX_WORDS = 45;
@@ -32,12 +33,7 @@ export const ScriptOutputSchema = (n: number) =>
 
 /** First 48 characters of the topic, cut on a word boundary; never empty. */
 function placeholderTitle(topic: string): string {
-  const t = topic.trim();
-  if (t.length <= TITLE_MAX) return t || 'Untitled';
-  const head = t.slice(0, TITLE_MAX);
-  if (/\s/.test(t.charAt(TITLE_MAX))) return head.trimEnd();
-  const ws = head.search(/\s\S*$/);
-  return (ws > 0 ? head.slice(0, ws) : head).trimEnd() || head;
+  return cutOnWord(topic, TITLE_MAX) || 'Untitled';
 }
 
 export const scriptStep: Step = async (p, ctx) => {
@@ -56,7 +52,7 @@ export const scriptStep: Step = async (p, ctx) => {
     spec: {type: 'title' as const, title, decor: 'none' as const, characters: 0},
     status: 'ok' as const,
     durationFrames: estimateDurationFrames(s.narration),
-    factIds: s.factIds.filter((id) => known.has(id)),
+    factIds: [...new Set(s.factIds.filter((id) => known.has(id)))],
     warnings: [] as string[],
   }));
   ctx.onProgress({step: 'script', log: `${scenes.length} scenes`});

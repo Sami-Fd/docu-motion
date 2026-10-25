@@ -71,6 +71,12 @@ describe('scriptStep', () => {
     expect(prompts[0]).toContain('11');
   });
 
+  it('deduplicates fact ids', async () => {
+    const {ctx} = setup(() => valid(11, ['f1', 'f1', 'f2', 'f1']));
+    const out = await scriptStep(project(3), ctx);
+    expect(out.scenes[0]!.factIds).toEqual(['f1', 'f2']);
+  });
+
   it('builds ids, placeholder specs and durations', async () => {
     const {ctx} = setup(() => valid(11));
     const out = await scriptStep(project(3), ctx);
