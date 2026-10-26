@@ -129,4 +129,52 @@ describe('voiceStep', () => {
     expect(out.scenes[2]!.durationFrames).toBe(estimateDurationFrames('Trois.'));
     expect(invalidate).not.toHaveBeenCalled();
   });
+  it('clears warnings of other engine branches, keeps unrelated ones', async () => {
+    const other = 'Layout may overflow the frame';
+    const p = project('upload', [
+      scene('s01', 'Un deux trois.', {warnings: [other, 'Voice failed: x']}),
+      scene('s02', 'Quatre.', {audio: {path: 'voice/s02.wav', seconds: 2}, dirty: true, warnings: [other]}),
+    ]);
+    const up = await voiceStep()(p, ctx());
+    expect(up.scenes[0]!.warnings).toEqual([other, 'No recording for this scene']);
+    expect(up.scenes[1]!.warnings[0]).toBe(other);
+    const edge = await voiceStep({engine: fakeEngine().engine, probe})({...up, voice: {engine: 'edge', voiceId: 'v1'}}, ctx());
+    expect(edge.scenes.map((s) => s.warnings)).toEqual([[other], [other]]);
+    const none = await voiceStep()({...up, voice: {engine: 'none'}}, ctx());
+    expect(none.scenes.map((s) => s.warnings)).toEqual([[other], [other]]);
+  });
+
+  it('resynthesizes when the hash matches but the file is gone', async () => {
+    const {engine, synthesize} = fakeEngine();
+    const step = voiceStep({engine, probe});
+    const out = await step(project('edge'), ctx());
+    await fs.rm(path.join(dir, 'voice', 's02.mp3'));
+    synthesize.mockClear();
+    await step(out, ctx());
+    expect(synthesize).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports progress as (i+1)/n', async () => {
+    const ratios: number[] = [];
+    await voiceStep({engine: fakeEngine().engine, probe})(project('edge'), ctx({onProgress: (e) => void (e.ratio !== undefined && ratios.push(e.ratio))}));
+    expect(ratios).toEqual([1 / 3, 2 / 3, 1]);
+  });
+
+  it('invalidates the bundle even when the run aborts after a write', async () => {
+    const ac = new AbortController();
+    let calls = 0;
+    const engine = {
+      name: 'edge',
+      synthesize: async () => {
+        if (++calls === 2) {
+          ac.abort();
+          throw Object.assign(new Error('aborted'), {name: 'AbortError'});
+        }
+        return new Uint8Array([1]);
+      },
+    } as unknown as TtsEngine;
+    await expect(voiceStep({engine, probe})(project('edge'), ctx({signal: ac.signal}))).rejects.toThrow();
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect((await fs.readdir(path.join(dir, 'voice'))).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+  });
 });

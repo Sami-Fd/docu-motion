@@ -207,13 +207,12 @@ async function main(): Promise<number> {
 
   const failAt = process.env.DOCU_MOTION_FAIL_AT;
   const steps: Partial<Record<StepName, Step>> = {};
+  if (process.env.DOCU_MOTION_FAKE_TTS === '1') steps.voice = voiceStep({engine: createFakeTtsEngine()});
   if (failAt && (STEP_NAMES as readonly string[]).includes(failAt)) {
     steps[failAt as StepName] = async () => {
       throw new Error(`Injected failure (DOCU_MOTION_FAIL_AT=${failAt})`);
     };
   }
-
-  if (process.env.DOCU_MOTION_FAKE_TTS === '1') steps.voice = voiceStep({engine: createFakeTtsEngine()});
 
   let lastStep: StepName | undefined;
   let done: Awaited<ReturnType<typeof generate>>;
