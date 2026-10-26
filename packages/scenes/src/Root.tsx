@@ -8,6 +8,8 @@ import {Background, Canvas} from './kit';
 import {EXAMPLES, SCENE_TYPES} from './schema';
 import {clampFrames} from './film/pure';
 import {estimateDurationFrames} from './timing';
+import {Thumbnail, ThumbnailBackground} from './thumbnail/Thumbnail';
+import {THUMBNAIL_EXAMPLES} from './thumbnail/schema';
 
 export type SceneStillInput = FilmInput & {sceneIndex: number};
 
@@ -87,6 +89,24 @@ export const RemotionRoot: React.FC = () => (
       component={BackgroundStill}
       width={1920}
       height={1080}
+      fps={FPS}
+      durationInFrames={1}
+      defaultProps={{style: 'papier' as StyleName}}
+    />
+    <Composition
+      id="Thumbnail"
+      component={Thumbnail}
+      width={1280}
+      height={720}
+      fps={FPS}
+      durationInFrames={1}
+      defaultProps={{style: 'papier' as StyleName, spec: THUMBNAIL_EXAMPLES[0]!}}
+    />
+    <Composition
+      id="ThumbnailBackground"
+      component={ThumbnailBackground}
+      width={1280}
+      height={720}
       fps={FPS}
       durationInFrames={1}
       defaultProps={{style: 'papier' as StyleName}}

@@ -7,3 +7,5 @@ export type { FilmInput, FilmScene, SceneProps } from './film/types';
 export { SCENE_COMPONENTS } from './film/SceneView';
 export { RemotionRoot } from './Root';
 export type { SceneStillInput } from './Root';
+export * from './thumbnail/schema';
+export { Thumbnail, ThumbnailBackground } from './thumbnail/Thumbnail';
