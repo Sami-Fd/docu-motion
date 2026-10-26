@@ -20,10 +20,12 @@ export async function defaultVoiceFor(
 ): Promise<string> {
   if (engine === 'elevenlabs') return ELEVENLABS_DEFAULT_VOICE;
   if (engine === 'openai') return OPENAI_DEFAULT_VOICE;
-  const known = EDGE_DEFAULTS[language];
+  // accept region-tagged input such as "en-GB" or "pt_BR"
+  const lang = language.toLowerCase().split(/[-_]/)[0]!;
+  const known = EDGE_DEFAULTS[lang];
   if (known) return known;
   const voices = await (deps.edgeClient ?? createEdgeClient()).listVoices();
-  const found = voices.find((v) => v.Locale.startsWith(`${language}-`));
-  if (!found) throw new Error(`No Edge voice found for language "${language}" — pass a voice id`);
+  const found = voices.find((v) => v.Locale.startsWith(`${lang}-`));
+  if (!found) throw new Error(`No Edge voice found for language "${lang}" — pass a voice id`);
   return found.ShortName;
 }

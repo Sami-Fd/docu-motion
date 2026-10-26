@@ -122,6 +122,70 @@ describe('transient retry', () => {
   });
 });
 
+describe('ElevenLabs robustness', () => {
+  it('encodes the voice id in the URL path', async () => {
+    let url = '';
+    const fetchStub = (async (u: string) => {
+      url = u;
+      return ok();
+    }) as unknown as typeof fetch;
+    const e = createTtsEngine('elevenlabs', settings({elevenlabs: 'xi-secret-key'}), {fetch: fetchStub});
+    await e.synthesize('x', {voiceId: 'a/b?c'});
+    expect(url).toContain('/text-to-speech/a%2Fb%3Fc?output_format=');
+  });
+  it('retries a 500 and redacts the key from the error', async () => {
+    const key = 'xi-secret-key-9';
+    let n = 0;
+    const fetchStub = (async () => (++n === 1 ? new Response('oops', {status: 500}) : ok())) as unknown as typeof fetch;
+    const sleeps: number[] = [];
+    const e = createTtsEngine('elevenlabs', settings({elevenlabs: key}), {
+      fetch: fetchStub,
+      sleep: async (ms) => void sleeps.push(ms),
+    });
+    expect(await e.synthesize('x', {voiceId: 'v'})).toEqual(bytes);
+    expect(sleeps).toEqual([1000]);
+    const bad = (async () => new Response(`bad key ${key}`, {status: 401})) as unknown as typeof fetch;
+    const e2 = createTtsEngine('elevenlabs', settings({elevenlabs: key}), {fetch: bad});
+    const err = (await e2.synthesize('x', {voiceId: 'v'}).catch((x) => x)) as Error;
+    expect(err.message).toContain('ElevenLabs');
+    expect(err.message).toContain('401');
+    expect(err.message).not.toContain(key);
+  });
+});
+
+describe('REST hardening', () => {
+  it('redacts before truncating so a key straddling char 300 cannot leak', async () => {
+    const key = 'sk-straddle-secret-key';
+    const body = 'a'.repeat(290) + key + 'tail';
+    const fetchStub = (async () => new Response(body, {status: 400})) as unknown as typeof fetch;
+    const e = createTtsEngine('openai', settings({openai: key}), {fetch: fetchStub});
+    const err = (await e.synthesize('x', {voiceId: 'alloy'}).catch((x) => x)) as Error;
+    expect(err.message).not.toContain('sk-');
+    expect(err.message).toContain('***');
+  });
+  it('wraps body-read failures as a transient engine error', async () => {
+    let n = 0;
+    const fetchStub = (async () => {
+      if (++n === 1) {
+        const r = new Response('x', {status: 200});
+        r.arrayBuffer = () => Promise.reject(new TypeError('terminated'));
+        return r;
+      }
+      return ok();
+    }) as unknown as typeof fetch;
+    const e = createTtsEngine('openai', settings({openai: 'sk-abcdefgh'}), {fetch: fetchStub, sleep: async () => {}});
+    expect(await e.synthesize('x', {voiceId: 'alloy'})).toEqual(bytes);
+    expect(n).toBe(2);
+  });
+  it('rejects an empty 200 body without retrying', async () => {
+    let n = 0;
+    const fetchStub = (async () => (n++, new Response(new Uint8Array(0), {status: 200}))) as unknown as typeof fetch;
+    const e = createTtsEngine('openai', settings({openai: 'sk-abcdefgh'}), {fetch: fetchStub, sleep: async () => {}});
+    await expect(e.synthesize('x', {voiceId: 'alloy'})).rejects.toThrow(/OpenAI.*empty/);
+    expect(n).toBe(1);
+  });
+});
+
 describe('Edge', () => {
   it('delegates to the injected client with no key needed', async () => {
     const client = fakeEdge();
@@ -159,6 +223,12 @@ describe('defaultVoiceFor', () => {
       {ShortName: 'nl-NL-ColetteNeural', Locale: 'nl-NL'},
     ]);
     expect(await defaultVoiceFor('edge', 'nl', {edgeClient: client})).toBe('nl-BE-ArnaudNeural');
+  });
+  it('normalises the language before the table lookup', async () => {
+    const client = fakeEdge();
+    expect(await defaultVoiceFor('edge', 'FR', {edgeClient: client})).toBe('fr-FR-DeniseNeural');
+    expect(await defaultVoiceFor('edge', 'en-GB', {edgeClient: client})).toBe('en-US-AriaNeural');
+    expect(await defaultVoiceFor('edge', 'pt_BR', {edgeClient: client})).toBe('pt-BR-FranciscaNeural');
   });
   it('throws when no edge voice matches', async () => {
     await expect(defaultVoiceFor('edge', 'xx', {edgeClient: fakeEdge()})).rejects.toThrow(/xx/);

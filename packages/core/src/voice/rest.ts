@@ -1,7 +1,8 @@
 import {redact} from '../llm/redact.js';
 import {ProviderError} from '../llm/types.js';
 
-const REQUEST_TIMEOUT_MS = 60_000;
+/** Per-request deadline (headers and body). A scene-length clip returns well within it; worst case per scene is about 3 x 60 s plus 5 s of backoff. */
+export const REST_REQUEST_TIMEOUT_MS = 60_000;
 
 export type RestSpec = {
   /** Display name used in errors, e.g. "OpenAI". */
@@ -16,7 +17,12 @@ export type RestSpec = {
 /** One POST returning audio bytes. Failures become ProviderErrors naming the engine and status, with the key redacted. */
 export async function postForAudio(spec: RestSpec, fetchFn: typeof fetch, signal?: AbortSignal): Promise<Uint8Array> {
   const secrets = [spec.secret];
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(REST_REQUEST_TIMEOUT_MS);
+  const failed = (cause: unknown) =>
+    new ProviderError(redact(`${spec.label} request failed: ${cause instanceof Error ? cause.message : String(cause)}`, secrets), {
+      provider: spec.provider,
+      transient: true,
+    });
   let res: Response;
   try {
     res = await fetchFn(spec.url, {
@@ -27,14 +33,11 @@ export async function postForAudio(spec: RestSpec, fetchFn: typeof fetch, signal
     });
   } catch (e) {
     if (signal?.aborted) throw e;
-    const cause = e instanceof Error ? e.message : String(e);
-    throw new ProviderError(redact(`${spec.label} request failed: ${cause}`, secrets), {
-      provider: spec.provider,
-      transient: true,
-    });
+    throw failed(e);
   }
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
+    // redact the whole body before truncating, so a key straddling the cut cannot leak a prefix
+    const text = redact(await res.text().catch(() => ''), secrets);
     const detail = text ? `: ${text.slice(0, 300)}` : '';
     throw new ProviderError(redact(`${spec.label} TTS failed with HTTP ${res.status}${detail}`, secrets), {
       provider: spec.provider,
@@ -42,5 +45,18 @@ export async function postForAudio(spec: RestSpec, fetchFn: typeof fetch, signal
       status: res.status,
     });
   }
-  return new Uint8Array(await res.arrayBuffer());
+  let audio: Uint8Array;
+  try {
+    audio = new Uint8Array(await res.arrayBuffer());
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    throw failed(e);
+  }
+  if (audio.length === 0) {
+    throw new ProviderError(`${spec.label} TTS returned an empty audio response`, {
+      provider: spec.provider,
+      transient: false,
+    });
+  }
+  return audio;
 }

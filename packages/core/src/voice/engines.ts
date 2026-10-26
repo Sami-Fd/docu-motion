@@ -2,7 +2,7 @@ import {withTransientRetry} from '../llm/makeProvider.js';
 import {redact} from '../llm/redact.js';
 import {ProviderError} from '../llm/types.js';
 import type {Settings} from '../settings/settings.js';
-import {createEdgeClient, type EdgeClient} from './edge.js';
+import {createEdgeClient, EdgeClientError, type EdgeClient} from './edge.js';
 import {postForAudio} from './rest.js';
 
 export type {EdgeClient} from './edge.js';
@@ -46,7 +46,10 @@ export function createTtsEngine(engine: TtsEngineName, settings: Settings, deps:
             } catch (e) {
               if (signal?.aborted) throw e;
               const cause = e instanceof Error ? e.message : String(e);
-              throw new ProviderError(`Edge TTS failed: ${cause}`, {provider: 'edge', transient: true});
+              throw new ProviderError(`Edge TTS failed: ${cause}`, {
+                provider: 'edge',
+                transient: e instanceof EdgeClientError ? e.transient : true,
+              });
             }
           },
           signal,

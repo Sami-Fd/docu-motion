@@ -5,6 +5,29 @@ export type EdgeClient = {
   listVoices(): Promise<{ShortName: string; Locale: string}[]>;
 };
 
+/** Thrown by the real client; `transient` is false for errors a retry cannot fix (bad voice, empty audio). */
+export class EdgeClientError extends Error {
+  transient: boolean;
+  constructor(message: string, transient: boolean) {
+    super(message);
+    this.name = 'EdgeClientError';
+    this.transient = transient;
+  }
+}
+
+/** msedge-tts puts the text raw into SSML, so markup characters in a narration must be escaped. */
+export function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/** Listing voices has no built-in timeout; offline it would hang forever. */
+export const LIST_VOICES_TIMEOUT_MS = 15_000;
+
 /** Real client over msedge-tts (Microsoft Edge read-aloud service; no key). One connection per call, since the voice is per call. */
 export function createEdgeClient(): EdgeClient {
   return {
@@ -12,8 +35,15 @@ export function createEdgeClient(): EdgeClient {
       if (signal?.aborted) throw abortError();
       const tts = new MsEdgeTTS();
       try {
-        await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-        const {audioStream} = tts.toStream(text);
+        try {
+          await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+        } catch (e) {
+          // an unusable voice id throws synchronously-ish; a connection failure is worth retrying
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new EdgeClientError(msg, !/locale|voice/i.test(msg));
+        }
+        if (signal?.aborted) throw abortError();
+        const {audioStream} = tts.toStream(escapeXml(text));
         const chunks: Buffer[] = [];
         return await new Promise<Uint8Array>((resolve, reject) => {
           const onAbort = () => {
@@ -30,7 +60,7 @@ export function createEdgeClient(): EdgeClient {
           audioStream.on('close', () => {
             done();
             const out = new Uint8Array(Buffer.concat(chunks));
-            if (out.length === 0) reject(new Error('Edge TTS returned no audio'));
+            if (out.length === 0) reject(new EdgeClientError('Edge TTS returned no audio', false));
             else resolve(out);
           });
         });
@@ -40,9 +70,18 @@ export function createEdgeClient(): EdgeClient {
     },
     async listVoices() {
       const tts = new MsEdgeTTS();
+      let timer: NodeJS.Timeout | undefined;
       try {
-        return await tts.getVoices();
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new EdgeClientError('Listing Edge voices timed out', true)),
+            LIST_VOICES_TIMEOUT_MS,
+          );
+          timer.unref();
+        });
+        return await Promise.race([tts.getVoices(), timeout]);
       } finally {
+        clearTimeout(timer);
         tts.close();
       }
     },
