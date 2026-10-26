@@ -10,3 +10,5 @@ export {renderVideo, renderSceneStill} from './render/render.js';
 export {probeMedia, type MediaInfo} from './render/probe.js';
 export {redact} from './llm/redact.js';
 export {formatWarningSummary} from './generate/summary.js';
+export {createFakeTtsEngine} from './voice/fake.js';
+export {voiceStep, audioHash} from './generate/steps/voice.js';

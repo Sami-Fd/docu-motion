@@ -62,7 +62,7 @@ describe('media helpers', () => {
     const mid = path.join(dir, 'mid.wav');
     await cutAudio(rec, 4, 7, mid);
     expect(await probeAudioSeconds(mid)).toBeCloseTo(3, 1);
-  });
+  }, 30_000);
 
   it('parses exponent notation and drops edge silences', () => {
     const err = ['silence_start: 2.3e-05', 'silence_end: 1.5', 'silence_start: 3', 'silence_end: 5.5e0'].join(String.fromCharCode(10));

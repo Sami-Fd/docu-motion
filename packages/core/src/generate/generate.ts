@@ -31,7 +31,7 @@ export const STEPS: Record<StepName, Step> = {
   facts: factsStep,
   script: scriptStep,
   scenes: scenesStep,
-  voice: voiceStep,
+  voice: voiceStep(),
   layout: layoutStep(),
   render: renderStep,
 };

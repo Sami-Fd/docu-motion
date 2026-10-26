@@ -80,7 +80,7 @@ export const ProjectSchema = z.object({
         narration: z.string(),
         spec: SceneSpecSchema,
         status: z.enum(['ok', 'fallback', 'review']),
-        audio: z.object({path: z.string(), seconds: z.number()}).optional(),
+        audio: z.object({path: z.string(), seconds: z.number(), hash: z.string().optional()}).optional(),
         durationFrames: z.number().int().positive(),
         factIds: z.array(z.string()).default([]),
         warnings: z.array(z.string()).default([]),

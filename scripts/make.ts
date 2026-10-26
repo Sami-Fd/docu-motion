@@ -2,7 +2,8 @@
 //   npm run make -- "<topic>" [--style papier|craie|infographie|nuit] [--sources <url|file>...] [--length <min>]
 //     [--language <code>] [--provider <name>] [--model <id>] [--voice none] [--data <dir>] [--resume <projectDir>] [--check]
 // Test-only hooks (never set outside tests): DOCU_MOTION_FAIL_AT=<step> makes that step throw (read only here);
-// DOCU_MOTION_FAKE_LOG=<file> makes the fake provider log its calls (read only by demoResponder).
+// DOCU_MOTION_FAKE_LOG=<file> makes the fake provider log its calls (read only by demoResponder);
+// DOCU_MOTION_FAKE_TTS=1 makes the voice step use the offline 440 Hz tone engine (words / 2.5 s) instead of a real TTS (read only here, injected into voiceStep).
 import {existsSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -13,6 +14,7 @@ import {
   StepFailedError,
   StyleNameSchema,
   createProject,
+  createFakeTtsEngine,
   createProvider,
   defaultDataDir,
   explainWebSearch,
@@ -24,6 +26,7 @@ import {
   requireProvider,
   redact,
   testConnection,
+  voiceStep,
   type ProviderRef,
   type Step,
   type StepName,
@@ -209,6 +212,8 @@ async function main(): Promise<number> {
       throw new Error(`Injected failure (DOCU_MOTION_FAIL_AT=${failAt})`);
     };
   }
+
+  if (process.env.DOCU_MOTION_FAKE_TTS === '1') steps.voice = voiceStep({engine: createFakeTtsEngine()});
 
   let lastStep: StepName | undefined;
   let done: Awaited<ReturnType<typeof generate>>;
