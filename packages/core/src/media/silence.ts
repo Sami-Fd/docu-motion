@@ -1,13 +1,28 @@
-import {runRemotionTool} from './ffmpeg.js';
+import {probeAudioSeconds, runRemotionTool} from './ffmpeg.js';
 
 export type Silence = {start: number; end: number};
 
 const EDGE = 0.05;
 
-function parseDuration(stderr: string): number {
+const NUM = String.raw`(-?\d+(?:\.\d+)?(?:e[-+]?\d+)?)`;
+
+/** Duration from the ffmpeg header, or undefined when it is N/A or missing. */
+function parseDuration(stderr: string): number | undefined {
   const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr);
-  if (!m) throw new Error('Could not read the audio duration from ffmpeg output');
-  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+  return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : undefined;
+}
+
+export function parseSilences(stderr: string, duration: number): Silence[] {
+  const starts = [...stderr.matchAll(new RegExp(String.raw`silence_start:\s*${NUM}`, 'gi'))].map((m) => Number(m[1]));
+  const ends = [...stderr.matchAll(new RegExp(String.raw`silence_end:\s*${NUM}`, 'gi'))].map((m) => Number(m[1]));
+  const silences: Silence[] = [];
+  starts.forEach((start, i) => {
+    // A trailing silence may have no silence_end line: it runs to the end of the file.
+    const end = ends[i] ?? duration;
+    if (start < EDGE || end > duration - EDGE) return;
+    silences.push({start, end});
+  });
+  return silences;
 }
 
 export async function detectSilences(
@@ -26,17 +41,8 @@ export async function detectSilences(
     'null',
     '-',
   ]);
-  const duration = parseDuration(stderr);
-  const starts = [...stderr.matchAll(/silence_start:\s*(-?[\d.]+)/g)].map((m) => Number(m[1]));
-  const ends = [...stderr.matchAll(/silence_end:\s*(-?[\d.]+)/g)].map((m) => Number(m[1]));
-  const silences: Silence[] = [];
-  starts.forEach((start, i) => {
-    // A trailing silence has no silence_end line: it runs to the end of the file.
-    const end = ends[i] ?? duration;
-    if (start < EDGE || end > duration - EDGE) return;
-    silences.push({start, end});
-  });
-  return {silences, duration};
+  const duration = parseDuration(stderr) ?? (await probeAudioSeconds(file));
+  return {silences: parseSilences(stderr, duration), duration};
 }
 
 /** Midpoints of the silences, only when there are exactly `count - 1` of them. */

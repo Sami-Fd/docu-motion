@@ -2,9 +2,8 @@ import {describe, it, expect, beforeAll, afterAll} from 'vitest';
 import {promises as fs} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {runRemotionTool} from '../../src/media/ffmpeg.js';
-import {probeAudioSeconds, cutAudio} from '../../src/media/ffmpeg.js';
-import {detectSilences, cutsFromSilences} from '../../src/media/silence.js';
+import {runRemotionTool, probeAudioSeconds, cutAudio} from '../../src/media/ffmpeg.js';
+import {detectSilences, cutsFromSilences, parseSilences} from '../../src/media/silence.js';
 
 let dir: string;
 let rec: string;
@@ -60,6 +59,14 @@ describe('media helpers', () => {
     const out = path.join(dir, 'cut.wav');
     await cutAudio(rec, 0, 3, out);
     expect(await probeAudioSeconds(out)).toBeCloseTo(3, 1);
+    const mid = path.join(dir, 'mid.wav');
+    await cutAudio(rec, 4, 7, mid);
+    expect(await probeAudioSeconds(mid)).toBeCloseTo(3, 1);
+  });
+
+  it('parses exponent notation and drops edge silences', () => {
+    const err = ['silence_start: 2.3e-05', 'silence_end: 1.5', 'silence_start: 3', 'silence_end: 5.5e0'].join(String.fromCharCode(10));
+    expect(parseSilences(err, 10)).toEqual([{start: 3, end: 5.5}]);
   });
 
   it('rejects with the stderr tail on failure', async () => {

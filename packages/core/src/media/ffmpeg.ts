@@ -24,6 +24,8 @@ export function runRemotionTool(
     });
     let stdout = '';
     let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
     child.stdout.on('data', (d) => (stdout += d));
     child.stderr.on('data', (d) => (stderr += d));
     child.on('error', reject);
