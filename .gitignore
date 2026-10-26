@@ -5,3 +5,6 @@ out
 *.mp4
 .env
 /config.json
+
+# Personal Claude Code settings
+.claude/settings.local.json
