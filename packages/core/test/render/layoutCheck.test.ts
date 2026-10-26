@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {PNG} from 'pngjs';
 import {SCENE_TYPES, type SceneSpec} from '@docu-motion/scenes';
-import {checkSceneLayout, pixelsOutsideSafeArea} from '../../src/render/layoutCheck.js';
+import {checkSceneLayout, pixelsOutsideBox, pixelsOutsideSafeArea} from '../../src/render/layoutCheck.js';
 import {invalidateBundle} from '../../src/render/bundle.js';
 import {exampleProject} from './exampleProject.js';
 
@@ -14,6 +14,18 @@ const solid = (w: number, h: number, v: number): PNG => {
   return png;
 };
 const paint = (png: PNG, x: number, y: number, v: number) => png.data.fill(v, (y * png.width + x) * 4, (y * png.width + x) * 4 + 4);
+
+describe('pixelsOutsideBox', () => {
+  it('counts changed pixels outside an arbitrary box, x1 and y1 exclusive', () => {
+    const bg = solid(100, 50, 255);
+    const scene = solid(100, 50, 255);
+    paint(scene, 10, 10, 0); // inside
+    paint(scene, 9, 10, 0); // left of x0
+    paint(scene, 20, 10, 0); // x1 is exclusive
+    paint(scene, 15, 30, 0); // y1 is exclusive
+    expect(pixelsOutsideBox(scene, bg, {x0: 10, x1: 20, y0: 10, y1: 30})).toBe(3);
+  });
+});
 
 describe('pixelsOutsideSafeArea', () => {
   it('counts changed pixels outside the safe area only', () => {

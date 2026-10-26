@@ -19,23 +19,18 @@ const CHANNEL_TOLERANCE = 8;
 /** A few odd pixels are allowed outside the safe area. */
 export const MAX_OUTSIDE_PIXELS = 20;
 
-/**
- * Counts the pixels that differ from the bare background and lie outside the safe area. The safe area
- * scales with the image width, so half-resolution images work too.
- */
-export function pixelsOutsideSafeArea(scenePng: PNG, backgroundPng: PNG): number {
+/** A rectangle in pixels: x0 and y0 inclusive, x1 and y1 exclusive. */
+export type Box = {x0: number; x1: number; y0: number; y1: number};
+
+/** Counts the pixels outside `box` that differ from `backgroundPng` by more than the anti-aliasing tolerance. */
+export function pixelsOutsideBox(scenePng: PNG, backgroundPng: PNG, box: Box): number {
   if (scenePng.width !== backgroundPng.width || scenePng.height !== backgroundPng.height) {
     throw new Error('Scene and background images must have the same size');
   }
-  const k = scenePng.width / FRAME_WIDTH;
-  const x0 = SAFE.x0 * k;
-  const x1 = SAFE.x1 * k;
-  const y0 = SAFE.y0 * k;
-  const y1 = SAFE.y1 * k;
   let outside = 0;
   for (let y = 0; y < scenePng.height; y++) {
     for (let x = 0; x < scenePng.width; x++) {
-      if (x >= x0 && x < x1 && y >= y0 && y < y1) continue;
+      if (x >= box.x0 && x < box.x1 && y >= box.y0 && y < box.y1) continue;
       const i = (y * scenePng.width + x) * 4;
       for (let c = 0; c < 4; c++) {
         if (Math.abs(scenePng.data[i + c]! - backgroundPng.data[i + c]!) > CHANNEL_TOLERANCE) {
@@ -46,6 +41,15 @@ export function pixelsOutsideSafeArea(scenePng: PNG, backgroundPng: PNG): number
     }
   }
   return outside;
+}
+
+/**
+ * Counts the pixels that differ from the bare background and lie outside the safe area. The safe area
+ * scales with the image width, so half-resolution images work too.
+ */
+export function pixelsOutsideSafeArea(scenePng: PNG, backgroundPng: PNG): number {
+  const k = scenePng.width / FRAME_WIDTH;
+  return pixelsOutsideBox(scenePng, backgroundPng, {x0: SAFE.x0 * k, x1: SAFE.x1 * k, y0: SAFE.y0 * k, y1: SAFE.y1 * k});
 }
 
 // Keyed by project dir + style; dropped when the project's bundle is invalidated.

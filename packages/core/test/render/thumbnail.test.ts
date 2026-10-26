@@ -8,6 +8,8 @@ import pixelmatch from 'pixelmatch';
 import {renderStill, selectComposition} from '@remotion/renderer';
 import {THUMBNAIL_EXAMPLES, type StyleName, type ThumbnailSpec} from '@docu-motion/scenes';
 import {bundleScenes, invalidateBundle} from '../../src/render/bundle.js';
+import {pixelsOutsideBox} from '../../src/render/layoutCheck.js';
+import {half} from './snapshotUtil.js';
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./__snapshots__/', import.meta.url));
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
@@ -16,8 +18,6 @@ const STYLES: StyleName[] = ['papier', 'craie', 'infographie', 'nuit'];
 const MAX_DIFF_RATIO = 0.005;
 // Everything the thumbnail draws on top of its background must stay this far (px) from every edge.
 const INSET = 40;
-const MAX_OUTSIDE_PIXELS = 20;
-const CHANNEL_TOLERANCE = 8;
 
 let root: string;
 let projectDir: string;
@@ -33,22 +33,9 @@ const still = async (id: 'Thumbnail' | 'ThumbnailBackground', style: StyleName, 
   return PNG.sync.read(await fs.readFile(output));
 };
 
-const outsideInset = (a: PNG, b: PNG): number => {
-  let n = 0;
-  for (let y = 0; y < a.height; y++) {
-    for (let x = 0; x < a.width; x++) {
-      if (x >= INSET && x < a.width - INSET && y >= INSET && y < a.height - INSET) continue;
-      const i = (y * a.width + x) * 4;
-      for (let c = 0; c < 4; c++) {
-        if (Math.abs(a.data[i + c]! - b.data[i + c]!) > CHANNEL_TOLERANCE) {
-          n++;
-          break;
-        }
-      }
-    }
-  }
-  return n;
-};
+// The words must stay in the left 60 % of the frame.
+const ZONE_X1 = 768;
+const insideInset = (png: PNG) => ({x0: INSET, x1: png.width - INSET, y0: INSET, y1: png.height - INSET});
 
 beforeAll(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'docu-motion-thumbnail-'));
@@ -64,11 +51,11 @@ const cases = THUMBNAIL_EXAMPLES.flatMap((_, i) => STYLES.map((style) => [i, sty
 
 describe('thumbnail snapshots', () => {
   it.each(cases)('example %i in %s matches its snapshot', async (i, style) => {
-    const png = await still('Thumbnail', style, THUMBNAIL_EXAMPLES[i]!);
+    const png = half(await still('Thumbnail', style, THUMBNAIL_EXAMPLES[i]!));
     const snapshot = path.join(SNAPSHOT_DIR, `thumbnail-${i}-${style}.png`);
     const missing = !existsSync(snapshot);
     if (missing && !UPDATE && IN_CI) {
-      throw new Error(`Missing snapshot ${snapshot}. Record it locally with UPDATE_SNAPSHOTS=1 npm run test:visual -- thumbnail`);
+      throw new Error(`Missing snapshot ${snapshot}. Record it with UPDATE_SNAPSHOTS=1 (docker compose --profile dev run --rm -e UPDATE_SNAPSHOTS=1 dev test:visual -- thumbnail)`);
     }
     if (UPDATE || missing) {
       await fs.mkdir(SNAPSHOT_DIR, {recursive: true});
@@ -93,7 +80,8 @@ describe('thumbnail stays inside the frame', () => {
     for (const style of STYLES) {
       const bg = await still('ThumbnailBackground', style);
       for (const spec of THUMBNAIL_EXAMPLES) {
-        expect(outsideInset(await still('Thumbnail', style, spec), bg), style).toBeLessThanOrEqual(MAX_OUTSIDE_PIXELS);
+        const png = await still('Thumbnail', style, spec);
+        expect(pixelsOutsideBox(png, bg, insideInset(png)), style).toBe(0);
       }
     }
   }, 300_000);
@@ -106,8 +94,28 @@ describe('thumbnail stays inside the frame', () => {
     for (const style of STYLES) {
       const bg = await still('ThumbnailBackground', style);
       for (const spec of stress) {
-        expect(outsideInset(await still('Thumbnail', style, spec), bg), style).toBeLessThanOrEqual(MAX_OUTSIDE_PIXELS);
+        const png = await still('Thumbnail', style, spec);
+        expect(pixelsOutsideBox(png, bg, insideInset(png)), style).toBe(0);
       }
+    }
+  }, 300_000);
+});
+
+// Widths the old estimate got wrong (wide lowercase, ligature capitals, symbols): the words must still end
+// inside the left 60 %. The same spec with invisible words (no-break spaces) isolates them: everything right
+// of the text zone (badge, element, characters) is identical, so any difference there is a word overflowing.
+describe('words stay in the left 60 % of the frame', () => {
+  const specs: ThumbnailSpec[] = [
+    {words: ['mmmmmmmmmmmmmm', 'ok'], characters: 1, element: 'none', highlight: 0},
+    {words: ['ŒWŒWŒWŒWŒWŒWŒW', '%@%@'], figure: '%@%@%@', characters: 2, element: 'coin', highlight: 1},
+    {words: ['ÆÆÆÆÆÆÆÆÆÆÆÆÆÆ', 'wwwwwwwwwwwwww', 'iiiiiiiiiiiiii', 'ß'], characters: 1, element: 'question', highlight: 2},
+  ];
+  it.each(STYLES)('%s', async (style) => {
+    for (const spec of specs) {
+      const hidden = await still('Thumbnail', style, {...spec, words: spec.words.map(() => ' ')});
+      const png = await still('Thumbnail', style, spec);
+      const zone = {x0: 0, x1: ZONE_X1, y0: 0, y1: png.height};
+      expect(pixelsOutsideBox(png, hidden, zone), JSON.stringify(spec.words)).toBe(0);
     }
   }, 300_000);
 });

@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {THUMBNAIL_EXAMPLES, ThumbnailSpecSchema, type ThumbnailSpec} from '../src/thumbnail/schema';
-import {MIN_WORD_SIZE, fitWordSize} from '../src/thumbnail/fit';
+import {MIN_WORD_SIZE, OUTLINE_EM, fitWordSize} from '../src/thumbnail/fit';
 
 const base: ThumbnailSpec = {words: ['LA', 'SECU', 'COUTE'], characters: 1, element: 'none', highlight: 1};
 const fails = (s: unknown) => !ThumbnailSpecSchema.safeParse(s).success;
@@ -36,6 +36,12 @@ describe('ThumbnailSpecSchema', () => {
     expect(r.error?.issues.map((i) => i.path.join('.'))).toContain('highlight');
     expect(fails({...base, highlight: 2})).toBe(false);
   });
+  it('counts a decomposed accent as one character', () => {
+    const nfd = 'é'.repeat(14); // 14 accented letters, 28 UTF-16 units
+    expect(nfd.length).toBe(28);
+    expect(fails({...base, words: [nfd, 'ok'], highlight: 0})).toBe(false);
+    expect(fails({...base, words: [nfd + 'é', 'ok'], highlight: 0})).toBe(true);
+  });
   it('rejects bad characters count and element', () => {
     expect(fails({...base, characters: 0})).toBe(true);
     expect(fails({...base, characters: 3})).toBe(true);
@@ -44,6 +50,13 @@ describe('ThumbnailSpecSchema', () => {
 });
 
 describe('fitWordSize', () => {
+  it('uses an injected measure instead of the estimate', () => {
+    const narrow = fitWordSize(['mmmm', 'ok'], {maxWidth: 1000, textScale: 1, measure: () => 1});
+    const wide = fitWordSize(['mmmm', 'ok'], {maxWidth: 1000, textScale: 1, measure: (t) => (t === 'mmmm' ? 8 : 1)});
+    expect(wide).toBeLessThan(narrow);
+    // The widest measured word (plus its outline) fills the zone.
+    expect(wide * (8 + OUTLINE_EM)).toBeLessThanOrEqual(1000.001);
+  });
   it('is larger for short words and never below the minimum', () => {
     const short = fitWordSize(['LA', 'SECU'], {maxWidth: 1000, textScale: 1});
     const long = fitWordSize(['W'.repeat(14), 'W'.repeat(14)], {maxWidth: 1000, textScale: 1});

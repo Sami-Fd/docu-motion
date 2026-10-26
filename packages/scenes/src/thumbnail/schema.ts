@@ -1,20 +1,23 @@
 import {z} from 'zod';
 
-// Lengths count code points, not UTF-16 units: "Sécu 🏥" is 6.
-const codePoints = (min: number, max: number) =>
-  z.string().refine((s) => {
-    const n = [...s].length;
+// Lengths count code points of the NFC-normalised text, not UTF-16 units: "Sécu 🏥" is 6, and a decomposed
+// "é" (e + U+0301) is 1. `.max(28)` is the UTF-16 upper bound of the limit, so the JSON Schema sent to the
+// LLM carries a maxLength without changing what is accepted.
+const codePoints = (min: number, max: number, description: string) =>
+  z.string().max(max * 2).describe(description).refine((s) => {
+    const n = [...s.normalize('NFC')].length;
     return n >= min && n <= max;
   }, {message: min > 0 ? `must be ${min} to ${max} characters` : `must be at most ${max} characters`});
 
 export const ThumbnailSpecSchema = z
   .object({
-    words: z.array(codePoints(1, 14)).min(2).max(4),
-    figure: codePoints(0, 12).optional(),
+    words: z.array(codePoints(1, 14, '1 to 14 characters: one short word, in uppercase')).min(2).max(4)
+      .describe('2 to 4 words, one per line, shown huge'),
+    figure: codePoints(0, 12, 'At most 12 characters: a short figure such as "-18 Md€"').optional(),
     characters: z.number().int().min(1).max(2),
     element: z.enum(['arrow-up', 'arrow-down', 'question', 'exclamation', 'coin', 'none']),
-    // Index of the word drawn in the accent colour.
-    highlight: z.number().int().min(0).max(3),
+    highlight: z.number().int().min(0).max(3)
+      .describe('Index into words (0-based) of the word drawn in the accent colour; must be smaller than the number of words'),
   })
   .superRefine((spec, ctx) => {
     if (spec.highlight >= spec.words.length) {

@@ -11,6 +11,7 @@ import {renderSceneStill} from '../../src/render/render.js';
 import {MAX_OUTSIDE_PIXELS, pixelsOutsideSafeArea} from '../../src/render/layoutCheck.js';
 import {bundleScenes, invalidateBundle} from '../../src/render/bundle.js';
 import {exampleProject} from './exampleProject.js';
+import {half} from './snapshotUtil.js';
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./__snapshots__/', import.meta.url));
 const UPDATE = process.env.UPDATE_SNAPSHOTS === '1';
@@ -53,23 +54,6 @@ afterAll(async () => {
   invalidateBundle(projectDir); // the temp project goes away, so does its bundle
   await fs.rm(root, {recursive: true, force: true});
 });
-
-// Snapshots are stored at half resolution (2x2 box filter): the paper and chalk grain makes
-// full-size PNGs ~3.5 MB each (65 MB for 36), half-size ones ~15 MB in total.
-const half = (src: PNG): PNG => {
-  const w = src.width / 2;
-  const h = src.height / 2;
-  const out = new PNG({width: w, height: h});
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      for (let c = 0; c < 4; c++) {
-        const at = (dx: number, dy: number) => src.data[((2 * y + dy) * src.width + 2 * x + dx) * 4 + c]!;
-        out.data[(y * w + x) * 4 + c] = Math.round((at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1)) / 4);
-      }
-    }
-  }
-  return out;
-};
 
 const cases = STYLES.flatMap((style) => SCENE_TYPES.map((type) => [type, style] as const));
 
