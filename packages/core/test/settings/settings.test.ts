@@ -22,6 +22,10 @@ describe('settings', () => {
     expect(s.keys.openai).toBe('k');
     expect(s.ollamaBaseUrl).toBe('http://x/v1');
   });
+  it('reads ELEVENLABS_API_KEY from env', async () => {
+    const s = await loadSettings(await tmp(), {ELEVENLABS_API_KEY: 'el-key'});
+    expect(s.keys.elevenlabs).toBe('el-key');
+  });
   it('round-trips', async () => {
     const dir = await tmp();
     const s = await loadSettings(dir, {});

@@ -23,6 +23,7 @@
     "@remotion/renderer": "4.0.538",
     "ai": "7.0.152",
     "linkedom": "0.18.14",
+    "msedge-tts": "2.1.1",
     "unpdf": "1.9.1",
     "zod": "3.25.76"
   },

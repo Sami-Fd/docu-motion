@@ -34,6 +34,7 @@ const ENV_KEYS: Record<string, keyof Settings['keys']> = {
   OPENROUTER_API_KEY: 'openrouter',
   TAVILY_API_KEY: 'tavily',
   BRAVE_API_KEY: 'brave',
+  ELEVENLABS_API_KEY: 'elevenlabs',
 };
 
 export function requireProvider(s: Settings): ProviderRef {

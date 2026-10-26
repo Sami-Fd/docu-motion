@@ -32,6 +32,52 @@ const defaultSleep = (ms: number) =>
     setTimeout(r, ms).unref();
   });
 
+const abortError = () => {
+  const err = new Error('Aborted');
+  err.name = 'AbortError';
+  return err;
+};
+
+const abortableSleep = (sleep: (ms: number) => Promise<void>, ms: number, signal?: AbortSignal): Promise<void> => {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => reject(abortError());
+    signal.addEventListener('abort', onAbort, {once: true});
+    sleep(ms).then(
+      () => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      },
+    );
+  });
+};
+
+/** Retries `fn` on transient ProviderErrors with backoff 1 s then 4 s; other errors (passed through `scrub`) are thrown at once. */
+export async function withTransientRetry<T>(
+  fn: () => Promise<T>,
+  opts: {sleep?: (ms: number) => Promise<void>; signal?: AbortSignal; scrub?: (e: unknown) => unknown} = {},
+): Promise<T> {
+  const sleep = opts.sleep ?? defaultSleep;
+  const {signal} = opts;
+  for (let attempt = 0; ; attempt++) {
+    if (signal?.aborted) throw abortError();
+    try {
+      return await fn();
+    } catch (e) {
+      const retriable =
+        e instanceof ProviderError && e.transient && attempt < TRANSIENT_BACKOFF_MS.length && !signal?.aborted;
+      if (!retriable) throw opts.scrub ? opts.scrub(e) : e;
+      await abortableSleep(sleep, TRANSIENT_BACKOFF_MS[attempt]!, signal);
+      if (signal?.aborted) throw abortError();
+    }
+  }
+}
+
 export function makeProvider(raw: RawProvider, opts: MakeProviderOpts = {}): LlmProvider {
   const sleep = opts.sleep ?? defaultSleep;
   const secrets = opts.secrets ?? [];
@@ -71,50 +117,12 @@ export function makeProvider(raw: RawProvider, opts: MakeProviderOpts = {}): Llm
     return wrapped;
   };
 
-  const abortError = () => {
-    const err = new Error('Aborted');
-    err.name = 'AbortError';
-    return err;
-  };
-
-  const abortableSleep = (ms: number, signal?: AbortSignal): Promise<void> => {
-    if (!signal) return sleep(ms);
-    if (signal.aborted) return Promise.reject(abortError());
-    return new Promise<void>((resolve, reject) => {
-      const onAbort = () => reject(abortError());
-      signal.addEventListener('abort', onAbort, {once: true});
-      sleep(ms).then(
-        () => {
-          signal.removeEventListener('abort', onAbort);
-          resolve();
-        },
-        (err) => {
-          signal.removeEventListener('abort', onAbort);
-          reject(err);
-        },
-      );
-    });
-  };
-
-  async function withTransientRetry<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      if (signal?.aborted) throw abortError();
-      try {
-        return await fn();
-      } catch (e) {
-        const retriable =
-          e instanceof ProviderError && e.transient && attempt < TRANSIENT_BACKOFF_MS.length && !signal?.aborted;
-        if (!retriable) throw scrub(e);
-        await abortableSleep(TRANSIENT_BACKOFF_MS[attempt]!, signal);
-        if (signal?.aborted) throw abortError();
-      }
-    }
-  }
+  const withRetry = <T>(fn: () => Promise<T>, signal?: AbortSignal) => withTransientRetry(fn, {sleep, signal, scrub});
 
   return {
     name: raw.name,
     capabilities: raw.capabilities,
-    generateText: (args) => withTransientRetry(() => raw.text(args), args.signal),
+    generateText: (args) => withRetry(() => raw.text(args), args.signal),
     async generateObject<T>(args: {schema: ZodType<T>; system: string; prompt: string; signal?: AbortSignal}) {
       const jsonSchema = zodSchema(args.schema).jsonSchema;
       let prompt = args.prompt;
@@ -122,7 +130,7 @@ export function makeProvider(raw: RawProvider, opts: MakeProviderOpts = {}): Llm
       let lastRaw = '';
       for (let attempt = 0; attempt <= VALIDATION_RETRIES; attempt++) {
         if (args.signal?.aborted) throw abortError();
-        const result = await withTransientRetry(
+        const result = await withRetry(
           () => raw.object({jsonSchema, schemaName: 'result', system: args.system, prompt, signal: args.signal}),
           args.signal,
         );
