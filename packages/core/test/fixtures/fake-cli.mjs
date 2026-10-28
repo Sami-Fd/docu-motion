@@ -13,6 +13,8 @@ process.stdin.on('end', () => {
     process.exit(2);
   } else if (mode === 'echo') {
     process.stdout.write(JSON.stringify({args: process.argv.slice(2), input, cwd: process.cwd()}));
+  } else if (mode === 'env') {
+    process.stdout.write(JSON.stringify({anthropic: process.env.ANTHROPIC_API_KEY ?? 'unset', gemini: process.env.GEMINI_API_KEY ?? 'unset', eleven: process.env.ELEVENLABS_API_KEY ?? 'unset', path: Boolean(process.env.PATH ?? process.env.Path)}));
   } else if (mode === 'claude-error') {
     process.stdout.write(JSON.stringify({type: 'result', subtype: 'success', is_error: true, result: 'Invalid API key'}));
   } else if (mode === 'claude-fail') {

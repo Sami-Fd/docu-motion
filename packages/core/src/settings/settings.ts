@@ -26,7 +26,8 @@ export const SettingsSchema = z.object({
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
-const ENV_KEYS: Record<string, keyof Settings['keys']> = {
+/** Env vars that override app keys; also stripped from CLI children (see llm/cli.ts). */
+export const ENV_KEYS: Record<string, keyof Settings['keys']> = {
   ANTHROPIC_API_KEY: 'anthropic',
   OPENAI_API_KEY: 'openai',
   GOOGLE_GENERATIVE_AI_API_KEY: 'google',
@@ -36,6 +37,8 @@ const ENV_KEYS: Record<string, keyof Settings['keys']> = {
   BRAVE_API_KEY: 'brave',
   ELEVENLABS_API_KEY: 'elevenlabs',
 };
+
+export const APP_KEY_ENV_VARS: readonly string[] = Object.keys(ENV_KEYS);
 
 export function requireProvider(s: Settings): ProviderRef {
   if (!s.provider) {

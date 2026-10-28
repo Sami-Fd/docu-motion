@@ -3,6 +3,7 @@ import {mkdtempSync, rmSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type {ProviderRef} from '../project/schema.js';
+import {APP_KEY_ENV_VARS} from '../settings/settings.js';
 import {makeProvider} from './makeProvider.js';
 import {ProviderError, type LlmProvider} from './types.js';
 
@@ -83,6 +84,20 @@ export function planSpawn(
   return {file: comSpec, args: ['/d', '/s', '/c', `""${shim}" ${args.join(' ')}"`], verbatim: true};
 }
 
+/**
+ * The child env: ours minus the app's own API keys (an agentic CLI must not inherit them; the CLIs keep
+ * their own credentials such as GEMINI_API_KEY or the ~/.claude login). Windows env names are
+ * case-insensitive, so strip them case-insensitively there.
+ */
+export function childEnv(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): NodeJS.ProcessEnv {
+  const strip = new Set(platform === 'win32' ? APP_KEY_ENV_VARS.map((k) => k.toUpperCase()) : APP_KEY_ENV_VARS);
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (!strip.has(platform === 'win32' ? k.toUpperCase() : k)) out[k] = v;
+  }
+  return out;
+}
+
 function killTree(child: ReturnType<typeof spawn>): void {
   if (process.platform === 'win32' && child.pid) {
     try {
@@ -147,6 +162,7 @@ export function createCliProvider(ref: ProviderRef, deps: CliDeps = {}): LlmProv
       };
       const child = spawn(plan.file, plan.args, {
         cwd,
+        env: childEnv(process.env),
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,

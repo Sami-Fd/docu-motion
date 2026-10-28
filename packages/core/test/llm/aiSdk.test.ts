@@ -59,6 +59,37 @@ describe('createApiProvider', () => {
     expect(model.doGenerateCalls[1]!.responseFormat?.type ?? 'text').toBe('text');
   });
 
+  it('does not fall back on an unrelated 400 and hints the key for a Google bad-key 400', async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calls++;
+        throw apiErr(400, 'API key not valid. Please pass a valid API key.');
+      },
+    });
+    const g = createApiProvider({kind: 'api', provider: 'google'}, {...settings, keys: {...settings.keys, google: 'k'}}, {
+      languageModel: model,
+      sleep: async () => {},
+    });
+    await expect(g.generateObject({schema, system: 's', prompt: 'p'})).rejects.toThrow(/GOOGLE_GENERATIVE_AI_API_KEY/);
+    expect(calls).toBe(1);
+  });
+
+  it('matches the 400 fallback against the response body too', async () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        if (++calls === 1) {
+          throw new APICallError({message: 'Bad Request', url: 'https://x', requestBodyValues: {}, statusCode: 400, responseBody: '{"error":"Invalid schema for response_format"}'});
+        }
+        return ok('{"n": 5}');
+      },
+    });
+    const p = createApiProvider(ref, settings, {languageModel: model, sleep: async () => {}});
+    expect(await p.generateObject({schema, system: 's', prompt: 'p'})).toEqual({n: 5});
+    expect(calls).toBe(2);
+  });
+
   it('does not fall back on a 401 from the structured call', async () => {
     let calls = 0;
     const model = new MockLanguageModelV4({

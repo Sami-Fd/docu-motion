@@ -74,7 +74,8 @@ export function toProviderError(e: unknown, provider: string, secrets: string[])
     const transient = status === 429 || status === 408 || (status !== undefined && status >= 500) ||
       (status === undefined && (e.isRetryable || (errorCode(e) !== undefined && TRANSIENT_CODES.has(errorCode(e)!))));
     const label = LABELS[provider] ?? provider;
-    const hint = (status === 401 || status === 403) && ENV_VARS[provider]
+    const badGoogleKey = status === 400 && provider === 'google' && /API key not valid/i.test(`${e.message} ${e.responseBody ?? ''}`);
+    const hint = (status === 401 || status === 403 || badGoogleKey) && ENV_VARS[provider]
       ? ` — check the key in Settings or ${ENV_VARS[provider]}`
       : '';
     const head = status !== undefined ? `${label} API error (HTTP ${status})` : `${label} API error`;
@@ -155,7 +156,7 @@ export function createApiProvider(
             NoObjectGeneratedError.isInstance(e) || JSONParseError.isInstance(e) || TypeValidationError.isInstance(e);
           // A 400 on the structured call usually means the provider refused the schema itself
           // (strict mode, unsupported keywords): retry once as plain text with the schema in the prompt.
-          const schemaRejected = APICallError.isInstance(e) && e.statusCode === 400;
+          const schemaRejected = APICallError.isInstance(e) && e.statusCode === 400 && /schema|response_format|json/i.test(`${e.message} ${e.responseBody ?? ''}`);
           if (!unparseable && !schemaRejected) throw wrap(e);
         }
         // Fallback: ask for plain text; makeProvider extracts and validates the JSON.

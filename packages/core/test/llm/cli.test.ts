@@ -4,7 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {afterEach, describe, expect, it} from 'vitest';
 import {z} from 'zod';
-import {CLI_ARGS, createCliProvider, planSpawn} from '../../src/llm/cli.js';
+import {CLI_ARGS, childEnv, createCliProvider, planSpawn} from '../../src/llm/cli.js';
 import {createProvider} from '../../src/llm/registry.js';
 import {ProviderError} from '../../src/llm/types.js';
 import {SettingsSchema} from '../../src/settings/settings.js';
@@ -21,9 +21,32 @@ const listCliDirs = () => readdirSync(os.tmpdir()).filter((d) => d.startsWith('d
 
 afterEach(() => {
   delete process.env.FAKE_CLI_MODE;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ELEVENLABS_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 });
 
 describe('createCliProvider', () => {
+  it('strips app API keys from the child env but keeps the CLI own credentials and PATH', async () => {
+    process.env.FAKE_CLI_MODE = 'env';
+    process.env.ANTHROPIC_API_KEY = 'sk-app';
+    process.env.ELEVENLABS_API_KEY = 'el-app';
+    process.env.GEMINI_API_KEY = 'gem-own';
+    const p = createCliProvider({kind: 'cli', provider: 'gemini'}, deps);
+    expect(JSON.parse(await p.generateText({system: 's', prompt: 'p'}))).toEqual({
+      anthropic: 'unset',
+      gemini: 'gem-own',
+      eleven: 'unset',
+      path: true,
+    });
+  });
+
+  it('childEnv strips case-insensitively on win32 only', () => {
+    const env = {anthropic_api_key: 'x', Path: 'p', OPENAI_API_KEY: 'y', GEMINI_API_KEY: 'g'};
+    expect(childEnv(env, 'win32')).toEqual({Path: 'p', GEMINI_API_KEY: 'g'});
+    expect(childEnv(env, 'linux')).toEqual({anthropic_api_key: 'x', Path: 'p', GEMINI_API_KEY: 'g'});
+  });
+
   it('has the expected name and capabilities', () => {
     const p = createCliProvider({kind: 'cli', provider: 'codex'}, deps);
     expect(p.name).toBe('cli:codex');
