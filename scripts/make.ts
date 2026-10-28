@@ -1,12 +1,13 @@
 // Generates a video from a topic.
 //   npm run make -- "<topic>" [--style papier|craie|infographie|nuit] [--sources <url|file>...] [--length <min>]
-//     [--language <code>] [--provider <name>] [--model <id>] [--voice none] [--data <dir>] [--resume <projectDir>] [--check]
+//     [--language <code>] [--provider <name>] [--model <id>] [--voice edge|elevenlabs|openai|none] [--voice-id <id>] [--data <dir>] [--resume <projectDir>] [--check]
 // Test-only hooks (never set outside tests): DOCU_MOTION_FAIL_AT=<step> makes that step throw (read only here);
 // DOCU_MOTION_FAKE_LOG=<file> makes the fake provider log its calls (read only by demoResponder);
-// DOCU_MOTION_FAKE_TTS=1 makes the voice step use the offline 440 Hz tone engine (words / 2.5 s) instead of a real TTS (read only here, injected into voiceStep).
+// DOCU_MOTION_FAKE_TTS=1 makes the voice step use the offline 440 Hz tone engine instead of a real TTS (read only in scripts/cli-common.ts, injected into voiceStep).
 import {existsSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {UsageError, fakeTtsSteps, reportPaths, usage} from './cli-common.js';
 import {
   GenerateCancelled,
   ProjectLoadError,
@@ -14,7 +15,7 @@ import {
   StepFailedError,
   StyleNameSchema,
   createProject,
-  createFakeTtsEngine,
+  createTtsEngine,
   createProvider,
   defaultDataDir,
   explainWebSearch,
@@ -26,7 +27,6 @@ import {
   requireProvider,
   redact,
   testConnection,
-  voiceStep,
   type ProviderRef,
   type Step,
   type StepName,
@@ -35,12 +35,9 @@ import {
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const USAGE =
   'Usage: npm run make -- "<topic>" [--style papier|craie|infographie|nuit] [--sources <url|file>...] [--length <min>] ' +
-  '[--language <code>] [--provider <name>] [--model <id>] [--voice none] [--data <dir>] [--resume <projectDir>] [--check]';
+  '[--language <code>] [--provider <name>] [--model <id>] [--voice edge|elevenlabs|openai|none] [--voice-id <id>] [--data <dir>] [--resume <projectDir>] [--check]';
 
-class UsageError extends Error {}
-const usage = (message: string): never => {
-  throw new UsageError(message);
-};
+const VOICES = ['edge', 'elevenlabs', 'openai', 'none'] as const;
 
 const CLI_PROVIDERS = ['claude', 'codex', 'gemini'];
 const API_PROVIDERS = ['anthropic', 'openai', 'google', 'mistral', 'openrouter', 'ollama'];
@@ -62,6 +59,7 @@ type Args = {
   provider?: string;
   model?: string;
   voice?: string;
+  voiceId?: string;
   data?: string;
   resume?: string;
   check: boolean;
@@ -69,7 +67,7 @@ type Args = {
 
 function parseArgs(argv: string[]): Args {
   const out: Args = {sources: [], check: false};
-  const single = new Set(['style', 'length', 'language', 'provider', 'model', 'voice', 'data', 'resume']);
+  const single = new Set(['style', 'length', 'language', 'provider', 'model', 'voice', 'voice-id', 'data', 'resume']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (!a.startsWith('--')) {
@@ -89,7 +87,7 @@ function parseArgs(argv: string[]): Args {
     } else if (single.has(name)) {
       const v = inline ?? argv[++i];
       if (v === undefined) usage(`--${name} needs a value`);
-      (out as Record<string, unknown>)[name] = v;
+      (out as Record<string, unknown>)[name === 'voice-id' ? 'voiceId' : name] = v;
     } else {
       usage(`Unknown option ${a}`);
     }
@@ -135,7 +133,12 @@ async function main(): Promise<number> {
     minutes = Number(args.length);
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 10) usage(`Invalid --length "${args.length}": expected a number of minutes between 1 and 10`);
   }
-  if (args.voice !== undefined && args.voice !== 'none') usage(`Voice engine "${args.voice}" arrives in Plan 3; use --voice none`);
+  const voice = (args.voice ?? 'edge') as (typeof VOICES)[number];
+  if (!VOICES.includes(voice)) usage(`Unknown voice engine "${args.voice}". Expected one of: ${VOICES.join(', ')}`);
+  if (args.resume !== undefined && (args.voice !== undefined || args.voiceId !== undefined)) {
+    usage('--voice and --voice-id cannot be combined with --resume (the project keeps its voice; change it with the touch command)');
+  }
+  if (voice === 'none' && args.voiceId !== undefined) usage('--voice-id needs a voice engine, not --voice none');
   if (args.resume !== undefined && args.sources.length > 0) usage('--sources cannot be combined with --resume');
   for (const s of args.sources) checkSource(s);
   const explicitRef = args.provider !== undefined ? providerRefFor(args.provider, args.model) : undefined;
@@ -177,6 +180,8 @@ async function main(): Promise<number> {
 
   // Build the provider before creating anything on disk: a missing key must not leave an orphan project.
   const llm = createProvider(ref, settings);
+  // Same for the TTS key: fail now, not at the voice step after the LLM work. (The fake TTS needs none.)
+  if ((voice === 'elevenlabs' || voice === 'openai') && process.env.DOCU_MOTION_FAKE_TTS !== '1') createTtsEngine(voice, settings);
 
   let projectDir: string;
   let webSearch: string;
@@ -195,7 +200,7 @@ async function main(): Promise<number> {
       provider: ref,
       webSearch: search,
       sources: args.sources,
-      voice: {engine: 'none'},
+      voice: voice === 'none' ? {engine: 'none'} : {engine: voice, ...(args.voiceId ? {voiceId: args.voiceId} : {})},
     });
     console.error(`Project: ${projectDir}`);
   }
@@ -206,8 +211,7 @@ async function main(): Promise<number> {
   process.once('SIGINT', () => controller.abort());
 
   const failAt = process.env.DOCU_MOTION_FAIL_AT;
-  const steps: Partial<Record<StepName, Step>> = {};
-  if (process.env.DOCU_MOTION_FAKE_TTS === '1') steps.voice = voiceStep({engine: createFakeTtsEngine()});
+  const steps: Partial<Record<StepName, Step>> = fakeTtsSteps();
   if (failAt && (STEP_NAMES as readonly string[]).includes(failAt)) {
     steps[failAt as StepName] = async () => {
       throw new Error(`Injected failure (DOCU_MOTION_FAIL_AT=${failAt})`);
@@ -250,6 +254,7 @@ async function main(): Promise<number> {
   const summary = formatWarningSummary(done);
   if (summary) console.error(summary);
   console.log(`OK ${path.join(projectDir, 'out', 'video.mp4')}`);
+  console.log(reportPaths(projectDir, done.thumbnail?.file).join('\n'));
   return 0;
 }
 

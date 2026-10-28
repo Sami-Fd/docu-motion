@@ -14,7 +14,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p scripts",
     "render": "tsx --tsconfig tsconfig.base.json scripts/render-project.ts",
     "sheet": "tsx --tsconfig tsconfig.base.json scripts/contact-sheet.ts",
-    "make": "tsx --tsconfig tsconfig.base.json scripts/make.ts"
+    "make": "tsx --tsconfig tsconfig.base.json scripts/make.ts",
+    "touch": "tsx --tsconfig tsconfig.base.json scripts/touch.ts"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

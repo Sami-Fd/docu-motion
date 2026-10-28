@@ -40,7 +40,8 @@ afterAll(async () => {
   await fs.rm(data, {recursive: true, force: true});
 });
 
-const base = (topic: string) => [topic, '--provider', 'fake', '--data', data];
+// R3: the default voice is edge (network); these tests stay offline with --voice none.
+const base = (topic: string) => [topic, '--provider', 'fake', '--voice', 'none', '--data', data];
 const projectDirs = async () => fs.readdir(path.join(data, 'projects')).catch(() => [] as string[]);
 
 describe('make CLI', () => {

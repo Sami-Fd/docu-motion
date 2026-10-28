@@ -28,4 +28,11 @@ describe('formatWarningSummary', () => {
       ].join('\n'),
     );
   });
+
+  it('adds the YouTube kit warnings, with or without scene warnings', () => {
+    const p = {...project([scene('s01', [])]), youtube: {warnings: ['Too few chapters']}} as unknown as Project;
+    expect(formatWarningSummary(p)).toBe(['YouTube kit:', '  Too few chapters'].join('\n'));
+    const q = {...project([scene('s01', ['x'])]), youtube: {warnings: ['y']}} as unknown as Project;
+    expect(formatWarningSummary(q)).toBe(['Warnings in 1 of 1 scenes:', '  s01: x', 'YouTube kit:', '  y'].join('\n'));
+  });
 });
