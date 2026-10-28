@@ -105,13 +105,21 @@ export const ProjectSchema = z.object({
       chapters: z.array(z.object({t: z.string(), label: z.string()})),
       hashtags: z.array(z.string()),
       warnings: z.array(z.string()).default([]),
+      /** Kept so a re-run of the package step reuses the user's copy instead of asking the LLM again. */
+      hook: z.string().optional(),
     })
     .optional(),
   // Plan 1/2 projects stored `{spec}`; that shape carries nothing the package step can use, so it loads as "no thumbnail".
   thumbnail: z
     .union([
-      z.object({options: z.array(ThumbnailSpecSchema), chosen: z.number().int().min(0), file: z.string()}),
-      z.object({spec: z.unknown()}).transform((): undefined => undefined),
+      z
+        .object({options: z.array(ThumbnailSpecSchema), chosen: z.number().int().min(0), file: z.string()})
+        .refine((t) => t.chosen < t.options.length, {message: 'thumbnail.chosen must index one of the options', path: ['chosen']}),
+      z
+        .object({spec: z.unknown()})
+        .strict()
+        .refine((o) => 'spec' in o)
+        .transform((): undefined => undefined),
     ])
     .optional(),
 });
