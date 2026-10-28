@@ -3,6 +3,8 @@ import {probeAudioSeconds, runRemotionTool} from './ffmpeg.js';
 export type Silence = {start: number; end: number};
 
 const EDGE = 0.05;
+/** Tail tolerance: lossy headers and the decoded length can differ by a frame or two. */
+const TAIL_EDGE = 0.25;
 
 const NUM = String.raw`(-?\d+(?:\.\d+)?(?:e[-+]?\d+)?)`;
 
@@ -33,7 +35,7 @@ export function parseRawSilences(stderr: string, duration: number): Silence[] {
 }
 
 export function parseSilences(stderr: string, duration: number): Silence[] {
-  return parseRawSilences(stderr, duration).filter((s) => !(s.start < EDGE || s.end > duration - EDGE));
+  return parseRawSilences(stderr, duration).filter((s) => !(s.start < EDGE || s.end > duration - TAIL_EDGE));
 }
 
 /** Where the sound starts and ends once leading and trailing silence are set aside. */
@@ -43,7 +45,7 @@ export function soundBounds(stderr: string, duration: number): {soundStart: numb
   const last = raw[raw.length - 1];
   return {
     soundStart: first && first.start < EDGE ? first.end : 0,
-    soundEnd: last && last.end > duration - EDGE ? last.start : duration,
+    soundEnd: last && last.end > duration - TAIL_EDGE ? last.start : duration,
   };
 }
 
@@ -95,7 +97,8 @@ export async function detectSilences(
     'null',
     '-',
   ], {signal: opts.signal});
-  let duration = parseDuration(stderr);
+  // The decoded length of this very run beats the header, which is only an estimate for mp3/aac.
+  let duration = parseDecodedSeconds(stderr) ?? parseDuration(stderr);
   if (duration === undefined) {
     try {
       duration = await probeAudioSeconds(file, opts.signal);

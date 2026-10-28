@@ -11,7 +11,7 @@ import {STALE_RECORDING_WARNING, voiceStep} from '../../src/generate/steps/voice
 let root: string;
 
 /** N tones (lengths in s) separated by 2 s of silence. */
-async function makeRecording(file: string, tones: number[], o: {lead?: number; tail?: number; gap?: number} = {}): Promise<void> {
+async function makeRecording(file: string, tones: number[], o: {lead?: number; tail?: number; gap?: number; volume?: number} = {}): Promise<void> {
   const inputs: string[] = [];
   const parts: string[] = [];
   let k = 0;
@@ -28,7 +28,7 @@ async function makeRecording(file: string, tones: number[], o: {lead?: number; t
       k++;
     }
     inputs.push('-f', 'lavfi', '-i', `sine=frequency=440:duration=${d}`);
-    parts.push(`[${k}:a]aresample=44100,aformat=channel_layouts=mono[a${k}]`);
+    parts.push(`[${k}:a]aresample=44100,aformat=channel_layouts=mono${o.volume ? `,volume=${o.volume}` : ''}[a${k}]`);
     k++;
   });
   if (o.tail) quiet(o.tail);
@@ -175,6 +175,35 @@ describe('applyRecording', () => {
     await expect(fs.stat(path.join(dir, 'voice', 's1.tmp.wav'))).rejects.toThrow();
     await expect(fs.stat(path.join(dir, 'voice', 'recording.tmp.wav'))).rejects.toThrow();
   }, 90_000);
+
+  it('trims the lead-in and tail of an mp3 (header duration is only an estimate)', async () => {
+    const mp3 = path.join(root, 'padded.mp3');
+    await makeRecording(mp3, [2, 3, 2], {lead: 3, tail: 4});
+    const dir = await project('mp3tail', 3);
+    expect((await applyRecording(dir, mp3)).ok).toBe(true);
+    const p = await loadProject(dir);
+    [2.6, 3.6, 2.6].forEach((e, i) => {
+      expect(p.scenes[i]!.audio!.seconds).toBeGreaterThan(e - 0.2);
+      expect(p.scenes[i]!.audio!.seconds).toBeLessThan(e + 0.2);
+    });
+  }, 60_000);
+
+  it('restores an orphaned .bak left by a crash, even if the apply then fails', async () => {
+    const dir = await project('bakrestore', 3);
+    await fs.mkdir(path.join(dir, 'voice'));
+    await fs.writeFile(path.join(dir, 'voice', 's1.wav.bak'), 'keep');
+    await fs.mkdir(path.join(dir, 'voice', 's2.tmp.wav'));
+    await expect(applyRecording(dir, three)).rejects.toThrow();
+    expect(await fs.readFile(path.join(dir, 'voice', 's1.wav'), 'utf8')).toBe('keep');
+  }, 60_000);
+
+  it('explains a too-quiet recording and accepts it with a lower threshold', async () => {
+    const quiet = path.join(root, 'quiet.wav');
+    await makeRecording(quiet, [2, 3, 2], {volume: 0.1});
+    const dir = await project('quiet', 3);
+    await expect(applyRecording(dir, quiet)).rejects.toThrow(/silent or quieter than -38 dB.*noiseDb/);
+    expect((await applyRecording(dir, quiet, {noiseDb: -50})).ok).toBe(true);
+  }, 60_000);
 
   it('accepts an mp3 recording', async () => {
     const dir = await project('mp3', 3);

@@ -78,7 +78,9 @@ export async function applyRecording(
 
   const det = await detectSilences(file, {noiseDb: opts.noiseDb, minSeconds: opts.minSilence, signal});
   const {silences, duration, soundStart, soundEnd} = det;
-  if (soundEnd <= soundStart) throw new Error(`The recording ${file} is silent`);
+  if (soundEnd <= soundStart) throw new Error(
+      `${file} is silent or quieter than ${opts.noiseDb ?? -38} dB — try a lower noise threshold (noiseDb, e.g. ${Math.min(-45, (opts.noiseDb ?? -38) - 7)})`,
+    );
   let segments: [number, number][];
   if (opts.cuts) {
     checkCuts(opts.cuts, n - 1, duration);
@@ -120,7 +122,14 @@ export async function applyRecording(
   await fs.mkdir(voiceDir, {recursive: true});
   // Leftovers of an earlier crash.
   for (const f of await fs.readdir(voiceDir)) {
-    if (/\.tmp\.wav$/.test(f) || /^recording\.tmp\./.test(f) || /\.bak$/.test(f)) await rmQuiet(path.join(voiceDir, f));
+    const full = path.join(voiceDir, f);
+    if (/\.tmp\.wav$/.test(f) || /^recording\.tmp\./.test(f)) await rmQuiet(full);
+    else if (/\.bak$/.test(f)) {
+      const orig = full.slice(0, -4);
+      // A .bak whose original is missing is the only copy left by a crash mid-swap: put it back.
+      if (await exists(orig)) await rmQuiet(full);
+      else await fs.rename(full, orig).catch(() => {});
+    }
   }
   const cleanTmp = () => Promise.all([...staged.map((s) => rmQuiet(s.tmp)), rmQuiet(recTmp)]);
   try {
