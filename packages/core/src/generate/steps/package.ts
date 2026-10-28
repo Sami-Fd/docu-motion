@@ -26,23 +26,24 @@ const exists = (file: string) => fs.stat(file).then(() => true, () => false);
  * `thumbnail.chosen` and `thumbnail.file`, and records or clears the JPEG warning in `youtube.warnings`.
  * Shared by the package step and Task 6's chooseThumbnail.
  */
-export async function applyThumbnailChoice(
+async function placeThumbnail(
   projectDir: string,
   p: Project,
   index: number,
-  deps: {renderThumbnail?: RenderThumbnail} = {},
-): Promise<Project> {
-  const render = deps.renderThumbnail ?? defaultRenderThumbnail;
-  const options = p.thumbnail?.options ?? [];
-  const spec = options[index];
-  if (!spec) throw new Error(`Thumbnail ${index + 1} does not exist (${options.length} options)`);
+  render: RenderThumbnail,
+): Promise<{file: string; warnings: string[]}> {
+  const spec = p.thumbnail?.options[index];
+  if (!spec) throw new Error(`Thumbnail ${index + 1} does not exist (${p.thumbnail?.options.length ?? 0} options)`);
   const outDir = path.join(projectDir, 'out');
+  const source = path.join(outDir, `thumbnail-${index + 1}.png`);
   const png = path.join(outDir, 'thumbnail.png');
   const jpg = path.join(outDir, 'thumbnail.jpg');
   const warnings: string[] = [];
+  // The source must exist before the current thumbnail is touched.
+  if (!(await exists(source))) await render(projectDir, p, spec, source);
   await fs.rm(png, {force: true});
   await fs.rm(jpg, {force: true});
-  await fs.copyFile(path.join(outDir, `thumbnail-${index + 1}.png`), png);
+  await fs.copyFile(source, png);
   let file = 'out/thumbnail.png';
   if ((await sizeOf(png)) > MAX_THUMBNAIL_BYTES) {
     await fs.rm(png, {force: true});
@@ -51,10 +52,20 @@ export async function applyThumbnailChoice(
     warnings.push(JPEG_WARNING);
     if ((await sizeOf(jpg)) > MAX_THUMBNAIL_BYTES) warnings.push(JPEG_STILL_BIG_WARNING);
   }
+  return {file, warnings};
+}
+
+export async function applyThumbnailChoice(
+  projectDir: string,
+  p: Project,
+  index: number,
+  deps: {renderThumbnail?: RenderThumbnail} = {},
+): Promise<Project> {
+  const {file, warnings} = await placeThumbnail(projectDir, p, index, deps.renderThumbnail ?? defaultRenderThumbnail);
   const mine = [JPEG_WARNING, JPEG_STILL_BIG_WARNING];
   return {
     ...p,
-    thumbnail: {options, chosen: index, file},
+    thumbnail: {options: p.thumbnail!.options, chosen: index, file},
     ...(p.youtube ? {youtube: {...p.youtube, warnings: [...p.youtube.warnings.filter((w) => !mine.includes(w)), ...warnings]}} : {}),
   };
 }
@@ -70,9 +81,11 @@ export function packageStep(deps: {renderThumbnail?: RenderThumbnail} = {}): Ste
     // 1. Thumbnail: 3 options rendered, the first one chosen. A re-run keeps the options and the user's choice.
     let options: ThumbnailSpec[];
     let chosen = 0;
+    let reused = false;
     if (p.thumbnail && p.thumbnail.options.length === 3) {
       options = p.thumbnail.options;
       chosen = p.thumbnail.chosen;
+      reused = true;
     } else {
       ({options} = await ctx.llm.generateObject({
         schema: ThumbnailsOutputSchema,
@@ -83,11 +96,11 @@ export function packageStep(deps: {renderThumbnail?: RenderThumbnail} = {}): Ste
     for (let i = 0; i < options.length; i++) {
       ctx.signal?.throwIfAborted();
       const file = path.join(outDir, `thumbnail-${i + 1}.png`);
-      if (!(await exists(file))) await render(ctx.projectDir, p, options[i]!, file);
+      if (!reused || !(await exists(file))) await render(ctx.projectDir, p, options[i]!, file);
       ctx.onProgress({step: 'package', ratio: (i + 1) / (options.length + 2)});
     }
-    const withThumb = await applyThumbnailChoice(ctx.projectDir, {...p, thumbnail: {options, chosen, file: ''}}, chosen, {renderThumbnail: render});
-    const warnings: string[] = withThumb.thumbnail!.file.endsWith('.jpg') ? [JPEG_WARNING] : [];
+    const placed = await placeThumbnail(ctx.projectDir, {...p, thumbnail: {options, chosen, file: ''}}, chosen, render);
+    const warnings: string[] = [...placed.warnings];
 
     // 2. YouTube kit: a re-run keeps the titles, hook and hashtags and recomputes the rest.
     ctx.signal?.throwIfAborted();
@@ -113,7 +126,7 @@ export function packageStep(deps: {renderThumbnail?: RenderThumbnail} = {}): Ste
 
     return {
       ...p,
-      thumbnail: withThumb.thumbnail,
+      thumbnail: {options, chosen, file: placed.file},
       youtube: {titles: yt.titles.map(cleanLine), hook: yt.hook, description, chapters: ch, hashtags: yt.hashtags, warnings},
     };
   };
