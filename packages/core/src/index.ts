@@ -14,3 +14,4 @@ export {createFakeTtsEngine} from './voice/fake.js';
 export {voiceStep, audioHash} from './generate/steps/voice.js';
 export {layoutScene} from './generate/steps/layout.js';
 export * from './generate/touch.js';
+export {prepareRecording, applyRecording, type ApplyRecordingResult} from './voice/recording.js';
