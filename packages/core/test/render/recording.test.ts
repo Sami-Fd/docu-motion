@@ -11,13 +11,19 @@ import {STALE_RECORDING_WARNING, voiceStep} from '../../src/generate/steps/voice
 let root: string;
 
 /** N tones (lengths in s) separated by 2 s of silence. */
-async function makeRecording(file: string, tones: number[]): Promise<void> {
+async function makeRecording(file: string, tones: number[], o: {lead?: number; tail?: number; gap?: number} = {}): Promise<void> {
   const inputs: string[] = [];
   const parts: string[] = [];
   let k = 0;
+  const quiet = (d: number) => {
+    inputs.push('-f', 'lavfi', '-t', String(d), '-i', 'anullsrc=r=44100:cl=mono');
+    parts.push(`[${k}:a]aresample=44100,aformat=channel_layouts=mono[a${k}]`);
+    k++;
+  };
+  if (o.lead) quiet(o.lead);
   tones.forEach((d, i) => {
     if (i > 0) {
-      inputs.push('-f', 'lavfi', '-t', '2', '-i', 'anullsrc=r=44100:cl=mono');
+      inputs.push('-f', 'lavfi', '-t', String(o.gap ?? 2), '-i', 'anullsrc=r=44100:cl=mono');
       parts.push(`[${k}:a]aresample=44100,aformat=channel_layouts=mono[a${k}]`);
       k++;
     }
@@ -25,6 +31,7 @@ async function makeRecording(file: string, tones: number[]): Promise<void> {
     parts.push(`[${k}:a]aresample=44100,aformat=channel_layouts=mono[a${k}]`);
     k++;
   });
+  if (o.tail) quiet(o.tail);
   const labels = Array.from({length: k}, (_, i) => `[a${i}]`).join('');
   await runRemotionTool('ffmpeg', [
     '-y',
@@ -52,6 +59,8 @@ async function project(name: string, n: number, extra: (p: ReturnType<typeof exa
 let three: string;
 let two: string;
 let threeMp3: string;
+let padded: string;
+let longPause: string;
 
 beforeAll(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'rec-'));
@@ -61,6 +70,10 @@ beforeAll(async () => {
   await makeRecording(three, [2, 3, 2]);
   await makeRecording(two, [2, 8]);
   await makeRecording(threeMp3, [2, 3, 2]);
+  padded = path.join(root, 'padded.wav');
+  await makeRecording(padded, [2, 3, 2], {lead: 3, tail: 4});
+  longPause = path.join(root, 'long.wav');
+  await makeRecording(longPause, [2, 2], {gap: 1.5});
 }, 90_000);
 
 afterAll(async () => {
@@ -91,13 +104,13 @@ describe('applyRecording', () => {
     expect(r.ok).toBe(true);
     const p = await loadProject(dir);
     expect(p.voice.engine).toBe('upload');
-    const expected = [3, 5, 3];
+    const expected = [2.3, 3.6, 2.3];
     for (const [i, s] of p.scenes.entries()) {
       expect(s.audio!.hash).toBe('upload');
       expect(s.audio!.path).toBe(`voice/${s.id}.wav`);
       const sec = await probeAudioSeconds(path.join(dir, s.audio!.path));
-      expect(sec).toBeGreaterThan(expected[i]! - 0.3);
-      expect(sec).toBeLessThan(expected[i]! + 0.3);
+      expect(sec).toBeGreaterThan(expected[i]! - 0.15);
+      expect(sec).toBeLessThan(expected[i]! + 0.15);
       expect(s.audio!.seconds).toBeCloseTo(sec, 1);
       expect(s.dirty).toBeUndefined();
     }
@@ -111,6 +124,57 @@ describe('applyRecording', () => {
     const left = await fs.readdir(path.join(dir, 'voice'));
     expect(left.filter((f) => f.includes('tmp'))).toEqual([]);
   }, 60_000);
+
+  it('trims dead air: lead-in, tail and a pad around each pause', async () => {
+    const dir = await project('trim', 3);
+    expect((await applyRecording(dir, padded)).ok).toBe(true);
+    const p = await loadProject(dir);
+    [2.6, 3.6, 2.6].forEach((e, i) => expect(p.scenes[i]!.audio!.seconds).toBeGreaterThan(e - 0.15));
+    [2.6, 3.6, 2.6].forEach((e, i) => expect(p.scenes[i]!.audio!.seconds).toBeLessThan(e + 0.15));
+  }, 60_000);
+
+  it('splits a one-scene project despite a pause inside it', async () => {
+    const dir = await project('one', 1);
+    const r = await applyRecording(dir, longPause);
+    expect(r.ok).toBe(true);
+    const p = await loadProject(dir);
+    expect(p.scenes[0]!.audio!.seconds).toBeGreaterThan(5.4);
+  }, 60_000);
+
+  it('suggests cuts and hints when the pause count is wrong', async () => {
+    const dir = await project('sug', 2);
+    const r = await applyRecording(dir, three);
+    expect(r).toMatchObject({ok: false, found: 2, needed: 1});
+    if (!r.ok) expect(r.suggested).toHaveLength(1);
+    const dir3 = await project('sug3', 3);
+    const r0 = await applyRecording(dir3, two, {minSilence: 5});
+    expect(r0).toMatchObject({ok: false, found: 0, needed: 2, suggested: []});
+    if (!r0.ok) expect(r0.hint).toMatch(/-38 dB|noise/i);
+  }, 60_000);
+
+  it('cleans leftovers of an earlier crash', async () => {
+    const dir = await project('left', 3);
+    await fs.mkdir(path.join(dir, 'voice'));
+    await fs.writeFile(path.join(dir, 'voice', 's1.tmp.wav'), 'x');
+    await fs.writeFile(path.join(dir, 'voice', 'recording.tmp.wav'), 'x');
+    await fs.writeFile(path.join(dir, 'voice', 's1.wav.bak'), 'x');
+    expect((await applyRecording(dir, three)).ok).toBe(true);
+    expect((await fs.readdir(path.join(dir, 'voice'))).sort()).toEqual(['recording.wav', 's1.wav', 's2.wav', 's3.wav']);
+  }, 60_000);
+
+  it('fails cleanly in the middle of the cuts', async () => {
+    const dir = await project('mid', 3);
+    expect((await applyRecording(dir, three)).ok).toBe(true);
+    const snap = async () => Object.fromEntries(await Promise.all(
+      ['project.json', 'voice/s1.wav', 'voice/s2.wav', 'voice/s3.wav', 'voice/recording.wav'].map(async (f) => [f, (await fs.readFile(path.join(dir, f))).toString('base64')]),
+    ));
+    const before = await snap();
+    await fs.mkdir(path.join(dir, 'voice', 's2.tmp.wav'));
+    await expect(applyRecording(dir, padded)).rejects.toThrow();
+    expect(await snap()).toEqual(before);
+    await expect(fs.stat(path.join(dir, 'voice', 's1.tmp.wav'))).rejects.toThrow();
+    await expect(fs.stat(path.join(dir, 'voice', 'recording.tmp.wav'))).rejects.toThrow();
+  }, 90_000);
 
   it('accepts an mp3 recording', async () => {
     const dir = await project('mp3', 3);

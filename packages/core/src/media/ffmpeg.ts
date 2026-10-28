@@ -36,8 +36,8 @@ export function runRemotionTool(
   });
 }
 
-export async function probeAudioSeconds(file: string): Promise<number> {
-  const {stdout} = await runRemotionTool('ffprobe', ['-v', 'error', '-show_format', '-of', 'json', file]);
+export async function probeAudioSeconds(file: string, signal?: AbortSignal): Promise<number> {
+  const {stdout} = await runRemotionTool('ffprobe', ['-v', 'error', '-show_format', '-of', 'json', file], {signal});
   let seconds = NaN;
   try {
     seconds = Number((JSON.parse(stdout) as {format?: {duration?: string}}).format?.duration);
@@ -49,7 +49,7 @@ export async function probeAudioSeconds(file: string): Promise<number> {
 }
 
 /** Cuts [start, end] seconds of `input` into a 16-bit PCM WAV. */
-export async function cutAudio(input: string, start: number, end: number, output: string): Promise<void> {
+export async function cutAudio(input: string, start: number, end: number, output: string, signal?: AbortSignal): Promise<void> {
   await runRemotionTool('ffmpeg', [
     '-y',
     '-i',
@@ -61,5 +61,5 @@ export async function cutAudio(input: string, start: number, end: number, output
     '-c:a',
     'pcm_s16le',
     output,
-  ]);
+  ], {signal});
 }

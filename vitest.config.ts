@@ -14,6 +14,8 @@ export default defineConfig({
       {
         test: {
           name: 'visual',
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
           setupFiles: ['packages/core/test/setup/node20-iterator.ts'],
           include: ['packages/core/test/render/**/*.test.ts'],
           exclude: ['**/node_modules/**'],
