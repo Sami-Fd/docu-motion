@@ -12,3 +12,5 @@ export {redact} from './llm/redact.js';
 export {formatWarningSummary} from './generate/summary.js';
 export {createFakeTtsEngine} from './voice/fake.js';
 export {voiceStep, audioHash} from './generate/steps/voice.js';
+export {layoutScene} from './generate/steps/layout.js';
+export * from './generate/touch.js';
