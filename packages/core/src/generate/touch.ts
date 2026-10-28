@@ -19,7 +19,9 @@ const without = (p: Project, ...names: StepName[]): Project => ({
 function indexOfScene(p: Project, sceneId: string): number {
   const i = p.scenes.findIndex((s) => s.id === sceneId);
   if (i >= 0) return i;
-  const range = p.scenes.length > 0 ? `${p.scenes[0]!.id}…${p.scenes[p.scenes.length - 1]!.id}` : 'none';
+  const first = p.scenes[0]?.id;
+  const last = p.scenes[p.scenes.length - 1]?.id;
+  const range = first === undefined ? 'none' : first === last ? first : `${first}…${last}`;
   throw new Error(`Unknown scene "${sceneId}" — scenes are ${range}`);
 }
 
@@ -34,6 +36,10 @@ export async function regenerateScene(
   const i = indexOfScene(p, sceneId);
   const full: StepContext = {...ctx, projectDir};
   const r = await generateSceneSpec(p, i, full);
+  // Never swap a working scene for the plain fallback title: keep it and tell the user.
+  if (r.status === 'fallback') {
+    throw new Error(`Could not regenerate ${sceneId}: the LLM output was unusable — the scene was left unchanged`);
+  }
   p = {...p, scenes: p.scenes.map((s, j) => (j === i ? applySceneResult(s, r, p) : s))};
   // layoutScene drops this scene's stale layout warning before checking again.
   p = without(await layoutScene(p, i, full, deps), 'render', 'package');
@@ -44,7 +50,7 @@ export async function regenerateScene(
 /** Replaces one scene's narration; the voice step re-synthesizes it (hash mismatch) on the next `rerender`. */
 export async function editNarration(projectDir: string, sceneId: string, text: string): Promise<Project> {
   const narration = text.trim();
-  if (narration.length < 1 || narration.length > NARRATION_MAX) {
+  if ([...narration].length < 1 || [...narration].length > NARRATION_MAX) {
     throw new Error(`Narration must be between 1 and ${NARRATION_MAX} characters`);
   }
   const p0 = await loadProject(projectDir);
@@ -69,6 +75,7 @@ export async function rerender(
   return generate(projectDir, ctx, deps);
 }
 
+/** `index` is 0-based (the API); error messages number thumbnails from 1, as users see them. */
 export async function chooseThumbnail(
   projectDir: string,
   index: number,
@@ -77,7 +84,7 @@ export async function chooseThumbnail(
   const p = await loadProject(projectDir);
   if (!p.thumbnail) throw new Error('No thumbnail yet. Run the package step first');
   if (!Number.isInteger(index) || index < 0 || index >= p.thumbnail.options.length) {
-    throw new Error(`Thumbnail ${index + 1} does not exist (choose 0..${p.thumbnail.options.length - 1})`);
+    throw new Error(`Thumbnail ${index + 1} does not exist (choose 1..${p.thumbnail.options.length})`);
   }
   const next = await applyThumbnailChoice(projectDir, p, index, deps);
   await saveProject(projectDir, next);

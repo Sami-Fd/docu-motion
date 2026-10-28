@@ -1,14 +1,19 @@
-import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {THUMBNAIL_EXAMPLES} from '@docu-motion/scenes';
 import {promises as fs} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type {Step, StepContext} from '../../src/generate/context.js';
 import {chooseThumbnail, editNarration, refreshYoutube, regenerateScene, rerender} from '../../src/generate/touch.js';
+import {audioHash, voiceStep, STALE_RECORDING_WARNING} from '../../src/generate/steps/voice.js';
 import {createFakeProvider} from '../../src/llm/fake.js';
 import {STEP_NAMES, type Project} from '../../src/project/schema.js';
 import {loadProject, saveProject} from '../../src/project/store.js';
 import {SettingsSchema} from '../../src/settings/settings.js';
+import {LlmOutputError} from '../../src/llm/types.js';
+import type {TtsEngine} from '../../src/voice/engines.js';
+
+vi.mock('../../src/render/bundle.js', async (orig) => ({...(await orig<object>()), invalidateBundle: vi.fn()}));
 
 let dir: string;
 beforeEach(async () => {
@@ -49,6 +54,11 @@ describe('editNarration', () => {
     expect(p.progress.done).toEqual(['sources', 'facts', 'script', 'scenes', 'layout']);
     expect((await loadProject(dir)).scenes[1]!.dirty).toBe(true);
   });
+  it('counts code points, not UTF-16 units', async () => {
+    await save(project());
+    await expect(editNarration(dir, 's01', '😀'.repeat(2000))).resolves.toBeDefined();
+    await expect(editNarration(dir, 's01', '😀'.repeat(2001))).rejects.toThrow(/1 and 2000/);
+  });
   it('validates length', async () => {
     await save(project());
     await expect(editNarration(dir, 's02', '   ')).rejects.toThrow(/1 and 2000/);
@@ -57,6 +67,11 @@ describe('editNarration', () => {
 });
 
 describe('unknown scene', () => {
+  it('names the single scene without a range', async () => {
+    await save(project({scenes: [scene('s01')] as never}));
+    await expect(editNarration(dir, 's02', 'x')).rejects.toThrow(/"s02" — scenes are s01$/);
+  });
+
   it('lists the real range', async () => {
     await save(project());
     await expect(editNarration(dir, 's99', 'x')).rejects.toThrow('Unknown scene "s99" — scenes are s01…s03');
@@ -65,6 +80,14 @@ describe('unknown scene', () => {
 });
 
 describe('regenerateScene', () => {
+  it('never downgrades a scene: unusable LLM output throws and leaves project.json unchanged', async () => {
+    await save(project());
+    const before = await fs.readFile(path.join(dir, 'project.json'));
+    const bad = {...ctx(), llm: {...ctx().llm, generateObject: async () => { throw new LlmOutputError('bad', ['x'], '{}'); }}} as unknown as StepContext;
+    await expect(regenerateScene(dir, 's03', bad)).rejects.toThrow('Could not regenerate s03: the LLM output was unusable — the scene was left unchanged');
+    expect(await fs.readFile(path.join(dir, 'project.json'))).toEqual(before);
+  });
+
   it('asks the LLM once, clears the stale layout warning, drops render and package', async () => {
     await save(project());
     const prompts: string[] = [];
@@ -103,8 +126,8 @@ describe('chooseThumbnail', () => {
   });
   it('throws out of range, and without a thumbnail', async () => {
     await save(thumbs());
-    await expect(chooseThumbnail(dir, 5)).rejects.toThrow(/choose 0\.\.2/);
-    await expect(chooseThumbnail(dir, -1)).rejects.toThrow(/choose 0\.\.2/);
+    await expect(chooseThumbnail(dir, 8)).rejects.toThrow('Thumbnail 9 does not exist (choose 1..3)');
+    await expect(chooseThumbnail(dir, -1)).rejects.toThrow('Thumbnail 0 does not exist (choose 1..3)');
     await save(project());
     await expect(chooseThumbnail(dir, 0)).rejects.toThrow('Run the package step first');
   });
@@ -133,5 +156,45 @@ describe('refreshYoutube', () => {
     const p = await refreshYoutube(dir);
     expect(p.youtube).toBeUndefined();
     expect(p.thumbnail).toBeUndefined();
+  });
+});
+
+describe('editNarration then rerender with the real voice step', () => {
+  const voiced = async (engine: string) => {
+    await fs.mkdir(path.join(dir, 'voice'));
+    const scenes = [];
+    for (const id of ['s01', 's02', 's03']) {
+      const f = path.join(dir, 'voice', id + '.mp3');
+      await fs.writeFile(f, 'old');
+      await fs.utimes(f, new Date(2020, 0, 1), new Date(2020, 0, 1));
+      scenes.push({...scene(id), audio: {path: 'voice/' + id + '.mp3', seconds: 3, hash: audioHash('Narration ' + id + '.', engine, 'v1')}});
+    }
+    await save(project({scenes: scenes as never, voice: {engine: engine as never, voiceId: 'v1'}}));
+  };
+  const stubs = {render: (async (p) => p) as Step, package: (async (p) => p) as Step};
+
+  it('synthesizes only the edited scene and leaves the other mp3s alone', async () => {
+    await voiced('edge');
+    const synthesize = vi.fn(async (_text: string) => new Uint8Array([9]));
+    const engine = {name: 'edge', synthesize} as unknown as TtsEngine;
+    await editNarration(dir, 's02', 'Nouveau texte.');
+    const p = await rerender(dir, ctx(), {steps: {...stubs, voice: voiceStep({engine, probe: async () => 2})}});
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(synthesize.mock.calls[0]![0]).toBe('Nouveau texte.');
+    const mtime = async (id: string) => (await fs.stat(path.join(dir, 'voice', id + '.mp3'))).mtimeMs;
+    expect(await mtime('s01')).toBe(new Date(2020, 0, 1).getTime());
+    expect(await mtime('s03')).toBe(new Date(2020, 0, 1).getTime());
+    expect(await mtime('s02')).toBeGreaterThan(new Date(2021, 0, 1).getTime());
+    expect(p.scenes[1]!.dirty).toBeUndefined();
+    expect(p.scenes[1]!.audio!.seconds).toBe(2);
+  });
+
+  it('upload engine: the edited scene stays dirty with the stale-recording warning', async () => {
+    await voiced('upload');
+    await editNarration(dir, 's02', 'Nouveau texte.');
+    const p = await rerender(dir, ctx(), {steps: {...stubs, voice: voiceStep()}});
+    expect(p.scenes[1]).toMatchObject({dirty: true});
+    expect(p.scenes[1]!.warnings).toContain(STALE_RECORDING_WARNING);
+    expect(p.scenes[0]!.warnings).not.toContain(STALE_RECORDING_WARNING);
   });
 });
