@@ -51,7 +51,7 @@ function stubs(calls: string[], over: Partial<Record<StepName, Step>> = {}) {
 }
 
 describe('generate', () => {
-  it('runs the 7 steps in order, checkpointing after each', async () => {
+  it('runs the 8 steps in order, checkpointing after each', async () => {
     await saveProject(dir, base);
     const calls: string[] = [];
     const events: string[] = [];
@@ -59,7 +59,7 @@ describe('generate', () => {
     expect(calls).toEqual([...STEP_NAMES]);
     expect(events).toEqual([...STEP_NAMES]);
     expect(p.progress.done).toEqual([...STEP_NAMES]);
-    expect((await loadProject(dir)).facts).toHaveLength(7);
+    expect((await loadProject(dir)).facts).toHaveLength(8);
   });
 
   it('emits ratio 0 before each step runs, then ratio 1 after it', async () => {
@@ -94,7 +94,7 @@ describe('generate', () => {
 
     calls.length = 0;
     const p = await generate(dir, ctx(), {steps: stubs(calls)});
-    expect(calls).toEqual(['script', 'scenes', 'voice', 'layout', 'render']);
+    expect(calls).toEqual(['script', 'scenes', 'voice', 'layout', 'render', 'package']);
     expect(p.progress.failed).toBeUndefined();
     expect((await loadProject(dir)).progress.failed).toBeUndefined();
   });

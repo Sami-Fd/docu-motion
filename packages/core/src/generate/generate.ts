@@ -4,6 +4,7 @@ import {loadProject, saveProject} from '../project/store.js';
 import type {Step, StepContext} from './context.js';
 import {factsStep} from './steps/facts.js';
 import {layoutStep} from './steps/layout.js';
+import {packageStep} from './steps/package.js';
 import {renderStep} from './steps/render.js';
 import {scenesStep} from './steps/scenes.js';
 import {scriptStep} from './steps/script.js';
@@ -34,6 +35,7 @@ export const STEPS: Record<StepName, Step> = {
   voice: voiceStep(),
   layout: layoutStep(),
   render: renderStep,
+  package: packageStep(),
 };
 
 const isAbort = (e: unknown) => e instanceof Error && (e.name === 'AbortError' || e.name === 'GenerateCancelled');

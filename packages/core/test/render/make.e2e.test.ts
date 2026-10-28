@@ -46,7 +46,7 @@ const projectDirs = async () => fs.readdir(path.join(data, 'projects')).catch(()
 describe('make CLI', () => {
   it('generates a silent video', async () => {
     const r = await runMake(base('La dette publique française'));
-    expect(r.stderr).toContain('[3/7] script');
+    expect(r.stderr).toContain('[3/8] script');
     expect(r.code, r.stderr).toBe(0);
     expect(r.stderr).toMatch(/^Web search: off$/m);
     const mp4 = okPath(r.stdout);
@@ -60,7 +60,7 @@ describe('make CLI', () => {
     expect(Math.abs(info.durationSeconds - expected)).toBeLessThanOrEqual(0.2);
     expect(p.scenes).toHaveLength(11);
     expect(new Set(p.scenes.map((s) => s.spec.type))).toEqual(new Set(SCENE_TYPES));
-    expect(p.progress.done).toHaveLength(7);
+    expect(p.progress.done).toHaveLength(8);
     // per-scene warning summary on stderr; knowledge-only facts are unverified, so every cited figure warns
     const warned = p.scenes.filter((s) => s.warnings.length > 0);
     expect(warned.length).toBeGreaterThan(0);
@@ -84,7 +84,7 @@ describe('make CLI', () => {
     expect(resumed.code, resumed.stderr).toBe(0);
     expect(okPath(resumed.stdout)).toBeTruthy();
     expect(await factsCalls(log)).toBe(before);
-    expect((await loadProject(dir)).progress.done).toHaveLength(7);
+    expect((await loadProject(dir)).progress.done).toHaveLength(8);
   }, 600_000);
 
   it('checks the connection of the fake provider', async () => {

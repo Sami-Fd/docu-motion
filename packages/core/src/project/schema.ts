@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {SceneSpecSchema} from '@docu-motion/scenes';
+import {SceneSpecSchema, ThumbnailSpecSchema} from '@docu-motion/scenes';
 
 export const PROJECT_VERSION = 1 as const;
 
@@ -36,7 +36,7 @@ const uniqueSceneIds = (scenes: {id: string}[], ctx: z.RefinementCtx): void => {
   });
 };
 
-export const STEP_NAMES = ['sources', 'facts', 'script', 'scenes', 'voice', 'layout', 'render'] as const;
+export const STEP_NAMES = ['sources', 'facts', 'script', 'scenes', 'voice', 'layout', 'render', 'package'] as const;
 export const StepNameSchema = z.enum(STEP_NAMES);
 export type StepName = z.infer<typeof StepNameSchema>;
 
@@ -104,8 +104,15 @@ export const ProjectSchema = z.object({
       description: z.string(),
       chapters: z.array(z.object({t: z.string(), label: z.string()})),
       hashtags: z.array(z.string()),
+      warnings: z.array(z.string()).default([]),
     })
     .optional(),
-  thumbnail: z.object({spec: z.unknown()}).optional(),
+  // Plan 1/2 projects stored `{spec}`; that shape carries nothing the package step can use, so it loads as "no thumbnail".
+  thumbnail: z
+    .union([
+      z.object({options: z.array(ThumbnailSpecSchema), chosen: z.number().int().min(0), file: z.string()}),
+      z.object({spec: z.unknown()}).transform((): undefined => undefined),
+    ])
+    .optional(),
 });
 export type Project = z.infer<typeof ProjectSchema>;

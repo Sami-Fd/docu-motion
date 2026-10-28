@@ -72,6 +72,37 @@ function script(prompt: string, n: number) {
   };
 }
 
+const ELEMENTS = ['arrow-down', 'question', 'coin'] as const;
+
+function thumbnails(prompt: string) {
+  const words = shortTopic(prompt, 3)
+    .split(/\s+/)
+    .map((w) => [...w.toLocaleUpperCase()].slice(0, 14).join(''));
+  while (words.length < 2) words.push('EXPLIQUÉ');
+  return {
+    options: ELEMENTS.map((element, i) => ({
+      words,
+      figure: String(i + 1),
+      characters: (i % 2) + 1,
+      element,
+      highlight: i % words.length,
+    })),
+  };
+}
+
+function youtube(prompt: string) {
+  const topic = shortTopic(prompt, 8);
+  const tags = [...new Set(topic.toLowerCase().split(/\s+/).map((w) => w.replace(/[^\p{L}\p{N}]/gu, '')).filter((w) => w.length >= 3))]
+    .slice(0, 3)
+    .map((w) => `#${w.slice(0, 30)}`);
+  for (const extra of ['#explainer', '#docu', '#motion']) if (tags.length < 3 && !tags.includes(extra)) tags.push(extra);
+  return {
+    titles: [`${topic} in 3 minutes`, `${topic}: the key figures`, `What to know about ${topic}`].map((t) => [...t].slice(0, 70).join('')),
+    hook: `A short, clear look at ${topic}. We walk through the key figures and what they mean. Watch to the end for the conclusion.`,
+    hashtags: tags,
+  };
+}
+
 function narrationOf(prompt: string): string {
   const m = /^Narration of the scene:\n([\s\S]*?)\n\nFacts used:/m.exec(prompt);
   return (m ? m[1]! : prompt).trim();
@@ -140,6 +171,10 @@ export function demoResponder(req: {schema: ZodType; system: string; prompt: str
     if (ok(s)) return answer('script', s);
   }
   if (ok(sceneSpec)) return answer('scene', sceneSpec);
+  const t = thumbnails(prompt);
+  if (ok(t)) return answer('thumbnails', t);
+  const y = youtube(prompt);
+  if (ok(y)) return answer('youtube', y);
   const probe = {ok: true};
   if (ok(probe)) return answer('probe', probe);
   throw new Error('demoResponder: unrecognised schema');

@@ -107,3 +107,49 @@ export function fillScene(
       (feedback ? `\n\nUser feedback to apply:\n${feedback}` : ''),
   };
 }
+
+export function proposeThumbnails(
+  topic: string,
+  language: string,
+  style: string,
+  scenes: {title: string; narration: string}[],
+  examples: unknown[],
+): Prompt {
+  const lines = scenes.map((s, i) => `${i + 1}. ${s.title}`).join('\n');
+  return {
+    system:
+      'You design click-worthy YouTube thumbnails for an explainer video. Reply with JSON only. ' +
+      `Write all thumbnail text in this language: ${language}.`,
+    prompt:
+      `Topic: ${topic}\nVisual style: ${style}\n\nScenes of the video:\n${lines}\n\n` +
+      'Propose exactly 3 different thumbnails. Return {"options": [{"words": ["..."], "figure": "...", "characters": 1, "element": "...", "highlight": 0}]}.\n' +
+      'Rules:\n' +
+      '- "words" are 2 to 4 short words or phrases (at most 14 characters each), in uppercase, one per line; together they make a hook.\n' +
+      '- "highlight" is the 0-based index of the word drawn in the accent colour.\n' +
+      '- "figure" is optional: a short key figure (at most 12 characters) taken from the topic; never invent one.\n' +
+      '- "characters" is 1 or 2; "element" is one of arrow-up, arrow-down, question, exclamation, coin, none.\n' +
+      '- The 3 options must differ in wording and in element.\n\n' +
+      `Examples of valid thumbnails:\n${examples.map((e) => JSON.stringify(e)).join('\n')}`,
+  };
+}
+
+export function writeYoutube(
+  topic: string,
+  language: string,
+  scenes: {title: string; narration: string}[],
+): Prompt {
+  const lines = scenes.map((s, i) => `${i + 1}. ${s.title}: ${s.narration}`).join('\n');
+  return {
+    system:
+      'You write the YouTube publishing copy for an explainer video. Reply with JSON only. ' +
+      `Write everything in this language: ${language}.`,
+    prompt:
+      `Topic: ${topic}\n\nScenes:\n${lines}\n\n` +
+      'Return {"titles": ["...", "...", "..."], "hook": "...", "hashtags": ["#..."]}.\n' +
+      'Rules:\n' +
+      '- Exactly 3 different titles, each at most 70 characters, clear and honest (no clickbait lies).\n' +
+      '- "hook" is the description opening: 2 to 3 sentences, at most 400 characters, saying what the viewer will learn.\n' +
+      '- 3 to 5 hashtags, each starting with "#" followed by 2 to 30 letters, digits or underscores (no spaces).\n' +
+      '- Use only what the scenes say; do not invent figures.',
+  };
+}
