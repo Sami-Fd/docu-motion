@@ -1,10 +1,9 @@
 import React from 'react';
-import {AbsoluteFill, continueRender, delayRender} from 'remotion';
-import {measureText} from '@remotion/layout-utils';
-import {ThemeProvider, getTheme, useTheme, type StyleName} from '../theme';
+import {AbsoluteFill, cancelRender, continueRender, delayRender} from 'remotion';
+import {ThemeProvider, fontReady, getTheme, useTheme, type StyleName} from '../theme';
 import {Background, Canvas, Character, Coin, Text} from '../kit';
 import {PEOPLE_COLORS} from '../types/common';
-import {BLOCK_HEIGHT, LINE_HEIGHT, fitWordSize, narrowFactor, widthEm, type MeasureEm} from './fit';
+import {BLOCK_HEIGHT, LINE_HEIGHT, fitWordSize, narrowFactor, upperCase, widthEm, type MeasureEm} from './fit';
 import type {ThumbnailSpec} from './schema';
 
 // Layout in the 1920x1080 canvas (the 1280x720 output is a 2/3 scale, so its 40 px inset is 60 here).
@@ -14,30 +13,47 @@ const CENTER_Y = 540;
 const RIGHT_X = 1530;
 const WORD_WEIGHT = 600;
 
-// Real width in em of each text, measured once the style's font has loaded (the render waits via delayRender).
-// Until then, or if measuring fails, the estimate of fit.ts is used.
+// Width in em of the effective font size of `text` (to its rightmost ink), taken from a real SVG <text> in the DOM: the same
+// element type, font family and weight the thumbnail draws with, so what is measured is what is rendered.
+const measureRendered = (text: string, font: string, fontSize: number): number => {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('style', 'position:absolute;left:-10000px;top:0;visibility:hidden');
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  el.setAttribute('font-family', font);
+  el.setAttribute('font-weight', String(WORD_WEIGHT));
+  el.setAttribute('font-size', String(fontSize));
+  el.textContent = text;
+  svg.appendChild(el);
+  document.body.appendChild(svg);
+  try {
+    // The advance width, or the ink if it sticks out past it (Caveat's slanted strokes).
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    ctx.font = `${WORD_WEIGHT} ${fontSize}px "${font}"`;
+    return Math.max(el.getComputedTextLength(), ctx.measureText(text).actualBoundingBoxRight) / fontSize;
+  } finally {
+    svg.remove();
+  }
+};
+
+// Rendered width in em of each text, measured once the style's font has loaded. The render waits via
+// delayRender; a failure cancels the render instead of silently using the estimate. Only before the
+// measurement has landed (a state no captured frame is taken in) the estimate of fit.ts is used.
 const useMeasure = (texts: string[]): MeasureEm | undefined => {
-  const {font, textScale} = useTheme();
+  const {name, font, textScale} = useTheme();
   const key = JSON.stringify(texts);
+  const [handle] = React.useState(() => delayRender(`Measuring thumbnail text (${font})`));
   const [widths, setWidths] = React.useState<{key: string; em: Record<string, number>} | null>(null);
   React.useEffect(() => {
-    const handle = delayRender(`Measuring thumbnail text (${font})`);
     (async () => {
-      try {
-        const list = JSON.parse(key) as string[];
-        await Promise.all(list.map((t) => document.fonts.load(`${WORD_WEIGHT} 100px "${font}"`, t)));
-        const em: Record<string, number> = {};
-        for (const t of list) {
-          em[t] = measureText({text: t, fontFamily: font, fontWeight: String(WORD_WEIGHT), fontSize: 100 * textScale}).width / (100 * textScale);
-        }
-        setWidths({key, em});
-      } catch {
-        setWidths(null);
-      } finally {
-        continueRender(handle);
-      }
-    })();
-  }, [key, font, textScale]);
+      const list = JSON.parse(key) as string[];
+      await fontReady(name);
+      await Promise.all(list.map((t) => document.fonts.load(`${WORD_WEIGHT} 100px "${font}"`, t)));
+      const em: Record<string, number> = {};
+      for (const t of list) em[t] = measureRendered(t, font, 100 * textScale);
+      setWidths({key, em});
+      continueRender(handle);
+    })().catch((err) => cancelRender(err));
+  }, [key, name, font, textScale, handle]);
   if (!widths || widths.key !== key) return undefined;
   return (t) => widths.em[t] ?? widthEm(t);
 };
@@ -94,9 +110,8 @@ const Badge: React.FC<{text: string; measure?: MeasureEm}> = ({text, measure}) =
 const ThumbnailView: React.FC<{spec: ThumbnailSpec; language?: string}> = ({spec, language}) => {
   const {name, colors, font, textScale, charWidth} = useTheme();
   const dark = name === 'nuit' || name === 'craie'; // light words on a dark sky, dark outline
-  const upper = (t: string) => t.toLocaleUpperCase(language); // locale-aware (Turkish i), ß becomes SS
-  const words = spec.words.map(upper);
-  const figure = spec.figure ? upper(spec.figure) : undefined;
+  const words = spec.words.map((w) => upperCase(w, language));
+  const figure = spec.figure ? spec.figure : undefined; // case kept: "-18 Md€", "5 kg" mean something
   const measure = useMeasure(figure ? [...words, figure] : words);
   const n = words.length;
   const size = fitWordSize(words, {maxWidth: TEXT_WIDTH, textScale, charWidth, measure});

@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {THUMBNAIL_EXAMPLES, ThumbnailSpecSchema, type ThumbnailSpec} from '../src/thumbnail/schema';
-import {MIN_WORD_SIZE, OUTLINE_EM, fitWordSize} from '../src/thumbnail/fit';
+import {MIN_WORD_SIZE, OUTLINE_EM, fitWordSize, upperCase} from '../src/thumbnail/fit';
 
 const base: ThumbnailSpec = {words: ['LA', 'SECU', 'COUTE'], characters: 1, element: 'none', highlight: 1};
 const fails = (s: unknown) => !ThumbnailSpecSchema.safeParse(s).success;
@@ -69,5 +69,20 @@ describe('fitWordSize', () => {
     const four = fitWordSize(['A', 'B', 'C', 'D'], {maxWidth: 1000, textScale: 1});
     expect(four).toBeLessThan(two);
     expect(fitWordSize(['A', 'B'], {maxWidth: 1000, textScale: 1.15})).toBeLessThanOrEqual(two);
+  });
+});
+
+describe('upperCase', () => {
+  it('upper-cases, following the language when it is valid', () => {
+    expect(upperCase('sécu')).toBe('SÉCU');
+    expect(upperCase('iz', 'tr')).toBe('İZ');
+    expect(upperCase('iz', 'en')).toBe('IZ');
+    expect(upperCase('straße')).toBe('STRASSE');
+  });
+  it('falls back to the default rules on a malformed language tag instead of throwing', () => {
+    for (const bad of ['en_US', '', 'français']) {
+      expect(() => 'x'.toLocaleUpperCase(bad)).toThrow(RangeError);
+      expect(upperCase('sécu', bad)).toBe('SÉCU');
+    }
   });
 });

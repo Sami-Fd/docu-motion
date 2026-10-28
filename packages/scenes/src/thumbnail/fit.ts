@@ -7,8 +7,8 @@ export const LINE_HEIGHT = 1.1;
 export const BLOCK_HEIGHT = 800;
 // Theme charWidth (per nominal px, textScale included) of the widest style fonts: the reference of the estimate.
 const REF_CHAR_WIDTH = 0.6;
-// The words are drawn with a light outline of 0.12 em (stroke width), half of it outside each side.
-export const OUTLINE_EM = 0.12;
+// The words are drawn with an outline of 0.12 x size (stroke width): 0.06 x size sticks out of each side.
+export const OUTLINE_EM = 0.06;
 
 /** Width of `text` in em of the effective font size (textScale included), e.g. measured in the browser. */
 export type MeasureEm = (text: string) => number;
@@ -39,8 +39,17 @@ export const fitWordSize = (
 ): number => {
   // Real measured widths when available, else the conservative estimate (narrow fonts get less room per glyph).
   const em = measure ?? ((w: string) => widthEm(w) * narrowFactor(charWidth, textScale));
-  const widest = Math.max(1, ...words.map(em)) + OUTLINE_EM;
-  const byWidth = maxWidth / (widest * textScale);
+  const widest = Math.max(1, ...words.map(em));
+  const byWidth = maxWidth / (widest * textScale + OUTLINE_EM);
   const byHeight = BLOCK_HEIGHT / (words.length * LINE_HEIGHT * textScale);
   return Math.max(MIN_WORD_SIZE, Math.min(MAX_WORD_SIZE, byWidth, byHeight));
+};
+
+/** Upper-cases with the film language's rules (Turkish i); a malformed tag ("en_US", "") falls back to the default. */
+export const upperCase = (text: string, language?: string): string => {
+  try {
+    return text.toLocaleUpperCase(language);
+  } catch {
+    return text.toUpperCase();
+  }
 };

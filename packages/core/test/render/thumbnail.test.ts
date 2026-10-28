@@ -110,12 +110,32 @@ describe('words stay in the left 60 % of the frame', () => {
     {words: ['ŒWŒWŒWŒWŒWŒWŒW', '%@%@'], figure: '%@%@%@', characters: 2, element: 'coin', highlight: 1},
     {words: ['ÆÆÆÆÆÆÆÆÆÆÆÆÆÆ', 'wwwwwwwwwwwwww', 'iiiiiiiiiiiiii', 'ß'], characters: 1, element: 'question', highlight: 2},
   ];
+  // Rightmost differing pixel (x) between the render and its invisible-words twin: where the words end.
+  const rightmost = (a: PNG, b: PNG): number => {
+    let max = -1;
+    for (let y = 0; y < a.height; y++) {
+      for (let x = a.width - 1; x > max; x--) {
+        const i = (y * a.width + x) * 4;
+        if ([0, 1, 2, 3].some((c) => Math.abs(a.data[i + c]! - b.data[i + c]!) > 8)) {
+          max = x;
+          break;
+        }
+      }
+    }
+    return max;
+  };
   it.each(STYLES)('%s', async (style) => {
+    const ends: number[] = [];
     for (const spec of specs) {
       const hidden = await still('Thumbnail', style, {...spec, words: spec.words.map(() => ' ')});
       const png = await still('Thumbnail', style, spec);
       const zone = {x0: 0, x1: ZONE_X1, y0: 0, y1: png.height};
       expect(pixelsOutsideBox(png, hidden, zone), JSON.stringify(spec.words)).toBe(0);
+      // And not much less: the widest word fills the zone (all these specs are limited by width, not height).
+      const end = rightmost(png, hidden);
+      ends.push(end);
+      expect(end, `${style} ${JSON.stringify(spec.words)} ends at ${end}`).toBeGreaterThanOrEqual(ZONE_X1 * 0.97);
     }
+    console.log(`rightmost word pixel (${style}): ${ends.join(', ')} of ${ZONE_X1}`);
   }, 300_000);
 });

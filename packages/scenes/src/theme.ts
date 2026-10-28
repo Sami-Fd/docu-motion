@@ -38,7 +38,9 @@ export type FilterName = 'papier' | 'craie' | 'plat' | 'lueur';
 // (textScale included), used to estimate text widths so that strings never overflow.
 export type Theme = {name: StyleName; colors: Palette; filter: FilterName; font: string; charWidth: number; textScale: number};
 
-type StyleDef = {colors: Palette; filter: FilterName; family: string; charWidth: number; textScale: number; load: () => string};
+type FontLoad = {fontFamily: string; waitUntilDone: () => Promise<void>};
+
+type StyleDef = {colors: Palette; filter: FilterName; family: string; charWidth: number; textScale: number; load: () => FontLoad};
 
 const subsets = ['latin', 'latin-ext'] as ('latin' | 'latin-ext')[];
 
@@ -49,7 +51,7 @@ const STYLES: Record<StyleName, StyleDef> = {
     family: 'Fredoka',
     charWidth: 0.56,
     textScale: 1,
-    load: () => fredoka('normal', {weights: ['500', '600'], subsets}).fontFamily,
+    load: () => fredoka('normal', {weights: ['500', '600'], subsets}),
   },
   craie: {
     colors: {
@@ -61,7 +63,7 @@ const STYLES: Record<StyleName, StyleDef> = {
     family: 'Caveat',
     charWidth: 0.52,
     textScale: 1.15,
-    load: () => caveat('normal', {weights: ['500', '700'], subsets}).fontFamily,
+    load: () => caveat('normal', {weights: ['500', '700'], subsets}),
   },
   infographie: {
     colors: {
@@ -72,7 +74,7 @@ const STYLES: Record<StyleName, StyleDef> = {
     family: 'Poppins',
     charWidth: 0.62,
     textScale: 1,
-    load: () => poppins('normal', {weights: ['500', '600'], subsets}).fontFamily,
+    load: () => poppins('normal', {weights: ['500', '600'], subsets}),
   },
   nuit: {
     colors: {
@@ -84,26 +86,29 @@ const STYLES: Record<StyleName, StyleDef> = {
     family: 'Space Grotesk',
     charWidth: 0.6,
     textScale: 1,
-    load: () => spaceGrotesk('normal', {weights: ['500', '600'], subsets}).fontFamily,
+    load: () => spaceGrotesk('normal', {weights: ['500', '600'], subsets}),
   },
 };
 
 const isStyleName = (s: string | undefined): s is StyleName => s !== undefined && Object.hasOwn(STYLES, s);
 
-const loaded = new Map<StyleName, string>();
+const loaded = new Map<StyleName, FontLoad>();
 
 // Google fonts are only loaded in a browser context (render time), lazily and once per style.
 // In Node (unit tests, project loading) the family name is returned without loading anything.
-const fontFor = (name: StyleName): string => {
-  const def = STYLES[name];
-  if (typeof document === 'undefined') return def.family;
-  let family = loaded.get(name);
-  if (family === undefined) {
-    family = def.load();
-    loaded.set(name, family);
+const loadOf = (name: StyleName): FontLoad | undefined => {
+  if (typeof document === 'undefined') return undefined;
+  let font = loaded.get(name);
+  if (font === undefined) {
+    font = STYLES[name].load();
+    loaded.set(name, font);
   }
-  return family;
+  return font;
 };
+const fontFor = (name: StyleName): string => loadOf(name)?.fontFamily ?? STYLES[name].family;
+
+/** Resolves once the style's font files are loaded and usable (so text can be measured). */
+export const fontReady = (style: StyleName): Promise<void> => loadOf(style)?.waitUntilDone() ?? Promise.resolve();
 
 export const getTheme = (style: string | undefined): Theme => {
   const name: StyleName = isStyleName(style) ? style : 'papier';
