@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node ≥ 20, npm workspaces, TypeScript 5.8.3, React 19.1.0, Remotion 4.0.538 (`remotion`, `@remotion/cli`, `@remotion/bundler`, `@remotion/renderer`, `@remotion/google-fonts`), Zod 3.25.76, Vitest 3.2.4, pngjs 7.0.0, pixelmatch 7.1.0.
 
-**Spec:** `docs/superpowers/specs/2026-10-24-docu-motion-design.md` (sections 2.1, 2.2, 6, 8 are the ones this plan implements). The skill's kit to port: `C:\Users\sami_\Downloads\skill-documentaire-motion-design\documentaire-motion-design\SKILL.md` ("Kit : fichiers du projet").
+**Spec:** `docs/superpowers/specs/2026-10-24-docu-motion-design.md` (sections 2.1, 2.2, 6, 8 are the ones this plan implements). The skill's kit to port: `documentaire-motion-design/SKILL.md` in the skill repo (https://github.com/Sami-Fd/documentaire-motion-design) ("Kit : fichiers du projet").
 
 **Roadmap (later plans, not in this one):** 2 AI pipeline · 3 voice + export · 4 server + web UI · 5 Docker, CI, release.
 
@@ -22,7 +22,7 @@
 - Styles: `papier` (default, Fredoka), `craie` (Caveat), `infographie` (Poppins), `nuit` (Space Grotesk). Colour values copied verbatim from the skill's `theme.ts`.
 - Code identifiers in English; on-screen strings come from project data, never hard-coded French.
 - `project.json` carries `version: 1`; every write first copies the previous file to `project.json.bak`.
-- Paths may contain spaces and non-ASCII characters (the author's own is `D:\Sami\perso`).
+- Paths may contain spaces and non-ASCII characters (for example `D:\Users\Léa\perso`).
 
 ## Review Focus
 

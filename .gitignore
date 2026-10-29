@@ -8,3 +8,6 @@ out
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# Local agent ledger
+.superpowers/

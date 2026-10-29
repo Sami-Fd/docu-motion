@@ -32,7 +32,7 @@ const ctx = (extra: Partial<StepContext> = {}) =>
   ({projectDir: dir, settings: {keys: {openai: 'sk-secret-key-123'}}, onProgress: () => {}, ...extra}) as unknown as StepContext;
 const probe = async () => 3.0;
 const fakeEngine = (fail: (text: string) => boolean = () => false) => {
-  const synthesize = vi.fn(async (text: string) => {
+  const synthesize = vi.fn(async (text: string, _opts?: unknown) => {
     if (fail(text)) throw new Error('boom sk-secret-key-123');
     return new Uint8Array([1, 2, 3]);
   });
@@ -51,6 +51,75 @@ describe('voiceStep', () => {
     const out = await voiceStep()(p, ctx());
     expect(out.scenes[0]!.durationFrames).toBe(estimateDurationFrames('Un deux trois quatre cinq.'));
     expect(out.scenes[0]!.audio).toBeUndefined();
+  });
+
+  it('none: clears dirty on every scene', async () => {
+    const p = project('none', [scene('s01', 'Un.', {dirty: true}), scene('s02', 'Deux.')]);
+    const out = await voiceStep()(p, ctx());
+    expect(out.scenes.map((s) => s.dirty)).toEqual([undefined, undefined]);
+  });
+
+  it('upload: a recording whose file is gone counts as no recording', async () => {
+    await fs.mkdir(path.join(dir, 'voice'));
+    await fs.writeFile(path.join(dir, 'voice', 's01.wav'), 'x');
+    const p = project('upload', [
+      scene('s01', 'Un.', {audio: {path: 'voice/s01.wav', seconds: 2}, durationFrames: 99}),
+      scene('s02', 'Deux mots.', {audio: {path: 'voice/s02.wav', seconds: 2}, durationFrames: 99}),
+    ]);
+    const out = await voiceStep()(p, ctx());
+    expect(out.scenes[0]!.audio).toBeDefined();
+    expect(out.scenes[1]!.audio).toBeUndefined();
+    expect(out.scenes[1]!.warnings).toEqual(['No recording for this scene']);
+    expect(out.scenes[1]!.durationFrames).toBe(estimateDurationFrames('Deux mots.'));
+  });
+
+  describe('default voice resolution', () => {
+    const ja = (voice: Record<string, unknown> = {engine: 'edge'}) =>
+      ({...project('edge'), brief: {language: 'ja'}, voice}) as unknown as Project;
+    const client = () => ({
+      synthesize: vi.fn(),
+      listVoices: vi.fn(async () => [{ShortName: 'ja-JP-NanamiNeural', Locale: 'ja-JP'}]),
+    });
+
+    it('persists the resolved default with its engine, then a cached run needs no network', async () => {
+      const {engine, synthesize} = fakeEngine();
+      const edgeClient = client();
+      const first = await voiceStep({engine, probe, edgeClient})(ja(), ctx());
+      expect(first.voice).toMatchObject({engine: 'edge', resolvedVoiceId: 'ja-JP-NanamiNeural', resolvedEngine: 'edge'});
+      expect(first.voice.voiceId).toBeUndefined();
+      expect(edgeClient.listVoices).toHaveBeenCalledTimes(1);
+      synthesize.mockClear();
+      const offline = {
+        synthesize: vi.fn(),
+        listVoices: vi.fn(async () => {
+          throw new Error('offline');
+        }),
+      };
+      const again = await voiceStep({engine, probe, edgeClient: offline})(first, ctx());
+      expect(synthesize).not.toHaveBeenCalled();
+      expect(offline.listVoices).not.toHaveBeenCalled();
+      expect(again.scenes.every((s) => !s.warnings.length)).toBe(true);
+    });
+
+    it('does not list voices when the project has a voice id', async () => {
+      const edgeClient = client();
+      await voiceStep({engine: fakeEngine().engine, probe, edgeClient})(ja({engine: 'edge', voiceId: 'x'}), ctx());
+      expect(edgeClient.listVoices).not.toHaveBeenCalled();
+    });
+
+    it('ignores a resolved id that belongs to another engine', async () => {
+      const {engine, synthesize} = fakeEngine();
+      const stale = ja({engine: 'openai', resolvedVoiceId: 'ja-JP-NanamiNeural', resolvedEngine: 'edge'});
+      const out = await voiceStep({engine, probe})(stale, ctx());
+      expect(synthesize.mock.calls[0]![1]).toMatchObject({voiceId: 'alloy'});
+      expect(out.voice).toMatchObject({resolvedVoiceId: 'alloy', resolvedEngine: 'openai'});
+    });
+
+    it('an injected engine without a client never lists voices over the network', async () => {
+      const {engine, synthesize} = fakeEngine();
+      await voiceStep({engine, probe})(ja(), ctx());
+      expect(synthesize).toHaveBeenCalledTimes(3);
+    });
   });
 
   it('synthesizes, probes and caches', async () => {
@@ -116,6 +185,8 @@ describe('voiceStep', () => {
   });
 
   it('upload: warns for a missing recording, keeps audio, flags a dirty scene', async () => {
+    await fs.mkdir(path.join(dir, 'voice'));
+    for (const f of ['s01', 's02']) await fs.writeFile(path.join(dir, 'voice', f + '.wav'), 'x');
     const p = project('upload', [
       scene('s01', 'Un.', {audio: {path: 'voice/s01.wav', seconds: 2}, durationFrames: 99}),
       scene('s02', 'Deux.', {audio: {path: 'voice/s02.wav', seconds: 2}, durationFrames: 99, dirty: true}),

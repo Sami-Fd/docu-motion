@@ -7,7 +7,7 @@ import {redact} from '../../llm/redact.js';
 import {probeAudioSeconds} from '../../media/ffmpeg.js';
 import type {Project} from '../../project/schema.js';
 import {invalidateBundle} from '../../render/bundle.js';
-import {createTtsEngine, defaultVoiceFor, type TtsEngine} from '../../voice/engines.js';
+import {createTtsEngine, defaultVoiceFor, type EdgeClient, type TtsEngine} from '../../voice/engines.js';
 import type {Step} from '../context.js';
 
 export const VOICE_FAILED = 'Voice failed: ';
@@ -27,9 +27,12 @@ const isAbort = (e: unknown) => e instanceof Error && (e.name === 'AbortError' |
 
 /**
  * `engine` replaces the engine built from the settings (tests, and scripts/make.ts for the fake TTS);
- * `probe` replaces the ffprobe duration reader.
+ * `probe` replaces the ffprobe duration reader; `edgeClient` is used for the Edge engine and for the voice-list lookup
+ * of a language without a built-in default (an injected `engine` with no `edgeClient` never reaches the network for it).
  */
-export function voiceStep(deps: {engine?: TtsEngine; probe?: (file: string) => Promise<number>} = {}): Step {
+export function voiceStep(
+  deps: {engine?: TtsEngine; probe?: (file: string) => Promise<number>; edgeClient?: EdgeClient} = {},
+): Step {
   const probe = deps.probe ?? probeAudioSeconds;
   return async (p, ctx) => {
     ctx.signal?.throwIfAborted();
@@ -37,7 +40,7 @@ export function voiceStep(deps: {engine?: TtsEngine; probe?: (file: string) => P
     const kind = p.voice.engine;
 
     if (kind === 'none') {
-      const scenes = p.scenes.map(({audio: _audio, ...s}) => ({
+      const scenes = p.scenes.map(({audio: _audio, dirty: _dirty, ...s}) => ({
         ...s,
         durationFrames: estimateDurationFrames(s.narration),
         warnings: stripVoiceWarnings(s.warnings),
@@ -49,8 +52,10 @@ export function voiceStep(deps: {engine?: TtsEngine; probe?: (file: string) => P
     if (kind === 'upload') {
       const scenes = p.scenes.map((s): Scene => {
         const warnings = stripVoiceWarnings(s.warnings);
-        if (!s.audio) {
-          return {...s, durationFrames: estimateDurationFrames(s.narration), warnings: [...warnings, NO_RECORDING_WARNING]};
+        // A recording whose file is gone is no recording: estimate the length and say so.
+        if (!s.audio || !existsSync(path.join(ctx.projectDir, s.audio.path))) {
+          const {audio: _audio, ...noAudio} = s;
+          return {...noAudio, durationFrames: estimateDurationFrames(s.narration), warnings: [...warnings, NO_RECORDING_WARNING]};
         }
         return {...s, warnings: s.dirty ? [...warnings, STALE_RECORDING_WARNING] : warnings};
       });
@@ -59,9 +64,23 @@ export function voiceStep(deps: {engine?: TtsEngine; probe?: (file: string) => P
     }
 
     const secrets = Object.values(ctx.settings.keys).filter((v): v is string => typeof v === 'string' && v.length > 0);
-    const engine = deps.engine ?? createTtsEngine(kind, ctx.settings, {fetch: ctx.fetch});
+    const engine = deps.engine ?? createTtsEngine(kind, ctx.settings, {fetch: ctx.fetch, edgeClient: deps.edgeClient});
+    // A voice found earlier (explicit, or the resolved default of this very engine) is used without any lookup.
+    const known = p.voice.voiceId ?? (p.voice.resolvedEngine === kind ? p.voice.resolvedVoiceId : undefined);
+    const lookupClient: EdgeClient | undefined =
+      deps.edgeClient ??
+      (deps.engine
+        ? {
+            synthesize: async () => new Uint8Array(),
+            listVoices: async () => [{Locale: `${p.brief.language.toLowerCase().split(/[-_]/)[0]}-XX`, ShortName: 'injected-default'}],
+          }
+        : undefined);
+    let resolved: string | undefined;
     let voicePromise: Promise<string> | undefined;
-    const resolveVoice = () => (voicePromise ??= p.voice.voiceId ? Promise.resolve(p.voice.voiceId) : defaultVoiceFor(kind, p.brief.language));
+    const resolveVoice = () =>
+      known
+        ? Promise.resolve(known)
+        : (voicePromise ??= defaultVoiceFor(kind, p.brief.language, {edgeClient: lookupClient}).then((v) => (resolved = v)));
     const results: Scene[] = [];
     let wrote = false;
     let failures = 0;
@@ -106,6 +125,7 @@ export function voiceStep(deps: {engine?: TtsEngine; probe?: (file: string) => P
     } finally {
       if (wrote) invalidateBundle(ctx.projectDir);
     }
-    return {...p, scenes: results};
+    const voice = resolved && !p.voice.voiceId ? {...p.voice, resolvedVoiceId: resolved, resolvedEngine: kind} : p.voice;
+    return {...p, voice, scenes: results};
   };
 }

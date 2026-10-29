@@ -17,13 +17,11 @@ import {fileURLToPath} from 'node:url';
 import {
   GenerateCancelled,
   ProjectLoadError,
-  STEP_NAMES,
   StepFailedError,
   applyRecording,
   chooseThumbnail,
   createProvider,
   createTtsEngine,
-  defaultDataDir,
   editNarration,
   formatWarningSummary,
   loadProject,
@@ -34,9 +32,8 @@ import {
   rerender,
   setVoice,
   type StepContext,
-  type StepName,
 } from '../packages/core/src/index.js';
-import {fakeTtsEnabled, reportPaths, runCli, testTtsSteps, usage, voiceFailureHint} from './cli-common.js';
+import {dataDirFor, fakeTtsEnabled, reportPaths, runCli, stepProgress, testTtsSteps, usage, voiceFailureHint} from './cli-common.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const USAGE = [
@@ -110,14 +107,6 @@ function takeData(argv: string[]): {rest: string[]; data?: string} {
   return {rest, data};
 }
 
-/** Settings live in the data folder the project was made in: <data>/projects/<name>, unless --data says otherwise. */
-const dataDirFor = (projectDir: string, explicit?: string): string =>
-  explicit
-    ? path.resolve(explicit)
-    : path.basename(path.dirname(projectDir)) === 'projects'
-      ? path.dirname(path.dirname(projectDir))
-      : path.resolve(defaultDataDir());
-
 async function main(): Promise<number> {
   const envFile = path.join(REPO, '.env');
   if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -126,7 +115,8 @@ async function main(): Promise<number> {
   if (!dirArg || !command) usage(USAGE);
   const projectDir = path.resolve(dirArg!);
   const {rest, data} = takeData(tail);
-  const dataDir = dataDirFor(projectDir, data);
+  const {dataDir, isDefault} = dataDirFor(projectDir, data);
+  if (!isDefault) console.error(`Settings: ${path.join(dataDir, 'config.json')}`);
   if (!existsSync(path.join(projectDir, 'project.json'))) {
     usage(`No project.json found in ${projectDir} (the project folder comes first: touch <projectDir> <command>)`);
   }
@@ -138,19 +128,12 @@ async function main(): Promise<number> {
   const context = async (): Promise<Omit<StepContext, 'projectDir'>> => {
     const settings = await loadSettings(dataDir, process.env);
     const p = await loadProject(projectDir);
-    let lastStep: StepName | undefined;
     return {
       llm: createProvider(p.brief.provider, settings),
       settings,
       fetch,
       signal: controller.signal,
-      onProgress: (e) => {
-        if (e.step !== lastStep) {
-          lastStep = e.step;
-          console.error(`[${STEP_NAMES.indexOf(e.step) + 1}/${STEP_NAMES.length}] ${e.step} ...`);
-        }
-        if (e.log) console.error(`  ${e.log}`);
-      },
+      onProgress: stepProgress(),
     };
   };
 
@@ -158,15 +141,17 @@ async function main(): Promise<number> {
     case 'regenerate': {
       const {pos} = parse(rest, []);
       if (pos.length !== 1) usage(USAGE);
-      await regenerateScene(projectDir, pos[0]!.toLowerCase(), await context());
-      console.log(`OK ${pos[0]} regenerated - ${RERUN}`);
+      const id = pos[0]!.toLowerCase();
+      await regenerateScene(projectDir, id, await context());
+      console.log(`OK ${id} regenerated — ${RERUN}`);
       return 0;
     }
     case 'edit': {
       const {pos} = parse(rest, []);
       if (pos.length !== 2) usage(USAGE);
-      await editNarration(projectDir, pos[0]!.toLowerCase(), pos[1]!);
-      console.log(`OK ${pos[0]} narration updated - ${RERUN}`);
+      const id = pos[0]!.toLowerCase();
+      await editNarration(projectDir, id, pos[1]!);
+      console.log(`OK ${id} narration updated — ${RERUN}`);
       return 0;
     }
     case 'rerender': {
@@ -194,7 +179,7 @@ async function main(): Promise<number> {
       const {pos} = parse(rest, []);
       if (pos.length !== 0) usage(USAGE);
       const file = await prepareRecording(projectDir);
-      console.log(`OK ${file} - read it aloud, leaving a 2 s pause at each <break>, then run "recording <file>"`);
+      console.log(`OK ${file} — read it aloud, leaving a 2 s pause at each <break>, then run "recording <file>"`);
       return 0;
     }
     case 'recording': {
@@ -214,7 +199,7 @@ async function main(): Promise<number> {
         if (r.hint) console.error(flagNames(r.hint));
         return 1;
       }
-      console.log(`OK recording split into ${r.project.scenes.length} scenes - ${RERUN}`);
+      console.log(`OK recording split into ${r.project.scenes.length} scenes — ${RERUN}`);
       return 0;
     }
     case 'thumbnail': {
@@ -222,7 +207,7 @@ async function main(): Promise<number> {
       if (pos.length !== 1) usage(USAGE);
       const n = Number(pos[0]);
       if (!Number.isInteger(n)) usage(`Invalid thumbnail "${pos[0]}": expected a number from 1`);
-      await chooseThumbnail(projectDir, n - 1);
+      await chooseThumbnail(projectDir, n - 1, {signal: controller.signal});
       console.log(`OK thumbnail ${n} chosen`);
       return 0;
     }
@@ -230,8 +215,11 @@ async function main(): Promise<number> {
       const {pos, flag} = parse(rest, [], ['youtube', 'thumbnails']);
       if (pos.length !== 0) usage(USAGE);
       const both = flag.size === 0;
-      await refreshYoutube(projectDir, {youtube: both || flag.has('youtube'), thumbnails: both || flag.has('thumbnails')});
-      console.log('OK YouTube copy cleared - the next "rerender" regenerates it');
+      const youtube = both || flag.has('youtube');
+      const thumbnails = both || flag.has('thumbnails');
+      await refreshYoutube(projectDir, {youtube, thumbnails});
+      const cleared = youtube && thumbnails ? 'YouTube copy and thumbnail options' : youtube ? 'YouTube copy' : 'thumbnail options';
+      console.log(`OK ${cleared} cleared — the next "rerender" regenerates ${youtube && thumbnails ? 'them' : 'it'}`);
       return 0;
     }
     case 'voice': {
@@ -245,7 +233,7 @@ async function main(): Promise<number> {
         createTtsEngine(engine, await loadSettings(dataDir, process.env));
       }
       await setVoice(projectDir, {engine, voiceId: opt['voice-id']});
-      console.log(`OK voice set to ${engine}${opt['voice-id'] ? ` (${opt['voice-id']})` : ''} - ${RERUN}`);
+      console.log(`OK voice set to ${engine}${opt['voice-id'] ? ` (${opt['voice-id']})` : ''} — ${RERUN}`);
       return 0;
     }
     default:

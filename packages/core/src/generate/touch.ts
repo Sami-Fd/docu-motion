@@ -79,7 +79,7 @@ export async function rerender(
 export async function chooseThumbnail(
   projectDir: string,
   index: number,
-  deps: {renderThumbnail?: RenderThumbnail} = {},
+  deps: {renderThumbnail?: RenderThumbnail; signal?: AbortSignal} = {},
 ): Promise<Project> {
   const p = await loadProject(projectDir);
   if (!p.thumbnail) throw new Error('No thumbnail yet. Run "rerender" first');
@@ -109,7 +109,7 @@ export async function refreshYoutube(
   return p;
 }
 
-/** Changes the voice engine (and voice id) of a project; the next `rerender` or `make --resume` re-voices every scene. */
+/** Changes the voice engine (and voice id) of a project, forgetting any resolved default voice; the next `rerender` or `make --resume` re-voices every scene. */
 export async function setVoice(
   projectDir: string,
   voice: {engine: 'edge' | 'elevenlabs' | 'openai' | 'none'; voiceId?: string},

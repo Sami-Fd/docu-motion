@@ -91,6 +91,9 @@ export const ProjectSchema = z.object({
   voice: z.object({
     engine: z.enum(['edge', 'elevenlabs', 'openai', 'upload', 'none']),
     voiceId: z.string().optional(),
+    /** The default voice found for `resolvedEngine`, kept so cached audio is verifiable offline. Cleared by setVoice. */
+    resolvedVoiceId: z.string().optional(),
+    resolvedEngine: z.enum(['edge', 'elevenlabs', 'openai']).optional(),
   }),
   progress: z
     .object({

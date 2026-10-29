@@ -64,13 +64,39 @@ export async function renderVideo(
  * JPEG at quality 90 (the fallback for a PNG over 2 MB), anything else a PNG. The project language reaches
  * the composition so words are uppercased per locale.
  */
-export async function renderThumbnail(projectDir: string, p: Project, spec: ThumbnailSpec, out: string): Promise<string> {
-  const film = toFilmInput(p, projectDir, null);
-  const serveUrl = await bundleScenes(projectDir, filmAssets(film));
-  const inputProps = {style: p.brief.style, spec, language: p.brief.language};
-  const composition = await selectComposition({serveUrl, id: 'Thumbnail', inputProps});
-  const jpeg = /\.jpe?g$/i.test(out);
-  await fs.mkdir(path.dirname(out), {recursive: true});
-  await renderStill({composition, serveUrl, inputProps, frame: 0, output: out, ...(jpeg ? {imageFormat: 'jpeg' as const, jpegQuality: 90} : {imageFormat: 'png' as const})});
-  return out;
+export async function renderThumbnail(
+  projectDir: string,
+  p: Project,
+  spec: ThumbnailSpec,
+  out: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const cancelled = () => Object.assign(new Error('Render cancelled'), {name: 'AbortError'});
+  if (signal?.aborted) throw cancelled();
+  const {cancelSignal, cancel} = makeCancelSignal();
+  signal?.addEventListener('abort', cancel, {once: true});
+  try {
+    const film = toFilmInput(p, projectDir, null);
+    const serveUrl = await bundleScenes(projectDir, filmAssets(film));
+    if (signal?.aborted) throw cancelled();
+    const inputProps = {style: p.brief.style, spec, language: p.brief.language};
+    const composition = await selectComposition({serveUrl, id: 'Thumbnail', inputProps});
+    const jpeg = /\.jpe?g$/i.test(out);
+    await fs.mkdir(path.dirname(out), {recursive: true});
+    await renderStill({
+      composition,
+      serveUrl,
+      inputProps,
+      frame: 0,
+      output: out,
+      cancelSignal,
+      ...(jpeg ? {imageFormat: 'jpeg' as const, jpegQuality: 90} : {imageFormat: 'png' as const}),
+    });
+    return out;
+  } catch (e) {
+    if (signal?.aborted) throw cancelled();
+    throw e;
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
 }

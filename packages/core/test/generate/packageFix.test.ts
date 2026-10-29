@@ -138,10 +138,10 @@ describe('safe description', () => {
   };
 
   it('never prints the path or URI of a file source', () => {
-    const p = withSources(2, 'file', (i) => (i === 0 ? 'D:\\Users\\sami\\Documents\\memo-interne.pdf' : 'Rapport 2024'), () => 'D:\\Users\\sami\\Documents\\x.pdf');
+    const p = withSources(2, 'file', (i) => (i === 0 ? 'D:\\Users\\jdoe\\Documents\\memo-interne.pdf' : 'Rapport 2024'), () => 'D:\\Users\\jdoe\\Documents\\x.pdf');
     const text = describeVideo(p, out, []);
     expect(text).toContain('- memo-interne.pdf\n- Rapport 2024\n');
-    expect(text).not.toMatch(/Users|sami|Documents|x\.pdf/);
+    expect(text).not.toMatch(/Users|jdoe|Documents|x\.pdf/);
   });
 
   it('strips angle brackets and collapses newlines in titles', () => {

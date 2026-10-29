@@ -7,7 +7,7 @@
 import {existsSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {UsageError, fakeTtsEnabled, reportPaths, runCli, testTtsSteps, usage, voiceFailureHint} from './cli-common.js';
+import {UsageError, fakeTtsEnabled, reportPaths, runCli, stepProgress, testTtsSteps, usage, voiceFailureHint} from './cli-common.js';
 import {
   GenerateCancelled,
   ProjectLoadError,
@@ -219,7 +219,6 @@ async function main(): Promise<number> {
     };
   }
 
-  let lastStep: StepName | undefined;
   let done: Awaited<ReturnType<typeof generate>>;
   try {
     done = await generate(
@@ -230,13 +229,7 @@ async function main(): Promise<number> {
         fetch,
         signal: controller.signal,
         nativeSearch: webSearch === 'native' ? nativeSearchFor(ref, settings) : undefined,
-        onProgress: (e) => {
-          if (e.step !== lastStep) {
-            lastStep = e.step;
-            console.error(`[${STEP_NAMES.indexOf(e.step) + 1}/${STEP_NAMES.length}] ${e.step} …`);
-          }
-          if (e.log) console.error(`  ${e.log}`);
-        },
+        onProgress: stepProgress(),
       },
       {steps},
     );

@@ -217,3 +217,65 @@ describe('setVoice', () => {
     await expect(setVoice(dir, {engine: 'upload' as never})).rejects.toThrow(/recording/);
   });
 });
+
+describe('voice none, then edit, then the voice step', () => {
+  it('leaves no scene dirty', async () => {
+    await save(project());
+    await editNarration(dir, 's02', 'Nouveau texte.');
+    expect((await loadProject(dir)).scenes[1]!.dirty).toBe(true);
+    const p = await rerender(dir, ctx(), {steps: {render: (async (x) => x) as Step, package: (async (x) => x) as Step, voice: voiceStep()}});
+    expect(p.scenes.map((s) => s.dirty)).toEqual([undefined, undefined, undefined]);
+    expect((await loadProject(dir)).scenes.some((s) => s.dirty)).toBe(false);
+  });
+});
+
+describe('setVoice and the resolved default voice', () => {
+  it('clears resolvedVoiceId and its engine', async () => {
+    await save(project({voice: {engine: 'edge', resolvedVoiceId: 'ja-JP-NanamiNeural', resolvedEngine: 'edge'}}));
+    expect((await setVoice(dir, {engine: 'edge'})).voice).toEqual({engine: 'edge'});
+    await save(project({voice: {engine: 'edge', resolvedVoiceId: 'a', resolvedEngine: 'edge'}}));
+    expect((await setVoice(dir, {engine: 'openai', voiceId: 'alloy'})).voice).toEqual({engine: 'openai', voiceId: 'alloy'});
+  });
+});
+
+describe('rerender with a missing audio file', () => {
+  it('re-synthesizes the scene whose mp3 is gone', async () => {
+    await save(
+      project({
+        scenes: ['s01', 's02'].map((id) => ({
+          ...scene(id),
+          audio: {path: `voice/${id}.mp3`, seconds: 3, hash: audioHash(`Narration ${id}.`, 'edge', 'v1')},
+        })) as never,
+        voice: {engine: 'edge', voiceId: 'v1'},
+      }),
+    );
+    await fs.mkdir(path.join(dir, 'voice'));
+    await fs.writeFile(path.join(dir, 'voice', 's01.mp3'), 'old');
+    const synthesize = vi.fn(async (_t: string) => new Uint8Array([9]));
+    const engine = {name: 'edge', synthesize} as unknown as TtsEngine;
+    const p = await rerender(dir, ctx(), {
+      steps: {render: (async (x) => x) as Step, package: (async (x) => x) as Step, voice: voiceStep({engine, probe: async () => 2})},
+    });
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(synthesize.mock.calls[0]![0]).toBe('Narration s02.');
+    await expect(fs.stat(path.join(dir, 'voice', 's02.mp3'))).resolves.toBeDefined();
+    expect(p.scenes[1]!.audio!.seconds).toBe(2);
+  });
+});
+
+describe('thumbnail abort signal', () => {
+  it('chooseThumbnail passes the signal to renderThumbnail', async () => {
+    const png = Buffer.from('x');
+    await fs.mkdir(path.join(dir, 'out'));
+    await save(project({thumbnail: {options: [THUMBNAIL_EXAMPLES[0]!, THUMBNAIL_EXAMPLES[1]!, THUMBNAIL_EXAMPLES[2]!], chosen: 0, file: 'out/thumbnail.png'}} as never));
+    await fs.writeFile(path.join(dir, 'out', 'thumbnail.png'), png);
+    const ac = new AbortController();
+    const render = vi.fn(async (_d: string, _p: Project, _s: unknown, out: string, _signal?: AbortSignal) => {
+      await fs.writeFile(out, png);
+      return out;
+    });
+    await chooseThumbnail(dir, 1, {renderThumbnail: render as never, signal: ac.signal});
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0]![4]).toBe(ac.signal);
+  });
+});

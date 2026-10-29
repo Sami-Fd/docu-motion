@@ -48,7 +48,7 @@ Options: `--style papier|craie|infographie|nuit` (default `papier`), `--length <
 
 `search` is `auto`, `native`, `tavily`, `brave` or `off`. `--provider` overrides the file.
 
-**API keys** come from the environment or from a `.env` file at the repo root (git-ignored); the CLI loads it at startup and never prints keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, `BRAVE_API_KEY`, and `OLLAMA_BASE_URL` for a local Ollama.
+**API keys** come from the environment or from a `.env` file at the repo root (git-ignored); the CLI loads it at startup and never prints keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `TAVILY_API_KEY`, `BRAVE_API_KEY`, and `OLLAMA_BASE_URL` for a local Ollama.
 
 **Providers.** `anthropic`, `openai`, `google`, `mistral`, `openrouter` and `ollama` use their API. `claude`, `codex` and `gemini` drive the corresponding command-line tool and are **experimental**: the CLI must be installed and signed in in the environment that runs `make` (the default Docker image does not include them), and using a subscription-based CLI this way may not be allowed by that vendor's terms, so check them before you rely on it. `fake` is an offline provider for demos and tests. The CLI providers run with their own login: the app's API keys such as `ANTHROPIC_API_KEY` are not passed to them.
 
@@ -62,8 +62,8 @@ npm run touch -- "data/projects/<folder>" edit s02 "New narration."   # change t
 npm run touch -- "data/projects/<folder>" rerender                    # re-voice changed scenes, render, rebuild thumbnail and YouTube kit
 npm run touch -- "data/projects/<folder>" thumbnail 2                 # use thumbnail option 2 (1 to 3)
 npm run touch -- "data/projects/<folder>" refresh-youtube             # forget the YouTube copy and thumbnail options
-npm run touch -- "data/projects/<folder>" voice openai --voice-id alloy  # change the engine and voice (edge, elevenlabs, openai, none); then rerender
 npm run touch -- "data/projects/<folder>" refresh-youtube --youtube   # only the titles, description and hashtags (or --thumbnails)
+npm run touch -- "data/projects/<folder>" voice openai --voice-id alloy  # change the engine and voice (edge, elevenlabs, openai, none); then rerender
 ```
 
 `regenerate`, `edit` and `thumbnail` do not render: run `rerender` afterwards. `refresh-youtube` clears the saved copy; the next `rerender` regenerates it. `touch` reads the settings from the project's data folder (`<data>/projects/<name>`); pass `--data <dir>` if the project lives elsewhere. Put `--` before an argument that starts with `--` (`edit s02 -- "--5 % de dette"`). Do not run `touch` and `make` on the same project at the same time: there is no project lock yet.
@@ -89,7 +89,7 @@ npm run typecheck
 ## Layout
 
 - `packages/scenes`: Remotion compositions and the nine scene types (title, bars, donut, counter, pictograms, comparison, quote, timeline, list)
-- `packages/core`: `project.json` schema and store, bundling, still/video rendering, media probing
+- `packages/core`: `project.json` schema and store, settings, LLM providers and web research, the generation pipeline (sources, facts, script, scenes, voice, layout, render, package), voice engines (Edge, ElevenLabs, OpenAI) and recording import, the `touch` edit operations, bundling, still/video/thumbnail rendering, media probing
 - `scripts`: the `make` and `touch` commands
 - `examples/how-it-works`: demo project, a 10-scene video explaining how docu-motion works (no voice-over)
 

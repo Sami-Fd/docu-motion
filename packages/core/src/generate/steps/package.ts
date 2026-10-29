@@ -15,7 +15,7 @@ export const JPEG_STILL_BIG_WARNING = 'Thumbnail still over 2 MB as JPEG';
 export const CHAPTERS_WARNING = 'Too few chapters for YouTube (need 3 of ≥ 10 s)';
 export const MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024;
 
-export type RenderThumbnail = (projectDir: string, p: Project, spec: ThumbnailSpec, out: string) => Promise<string>;
+export type RenderThumbnail = (projectDir: string, p: Project, spec: ThumbnailSpec, out: string, signal?: AbortSignal) => Promise<string>;
 
 const sizeOf = async (file: string) => (await fs.stat(file)).size;
 const exists = (file: string) => fs.stat(file).then(() => true, () => false);
@@ -31,6 +31,7 @@ async function placeThumbnail(
   p: Project,
   index: number,
   render: RenderThumbnail,
+  signal?: AbortSignal,
 ): Promise<{file: string; warnings: string[]}> {
   const spec = p.thumbnail?.options[index];
   if (!spec) throw new Error(`Thumbnail ${index + 1} does not exist (${p.thumbnail?.options.length ?? 0} options)`);
@@ -40,14 +41,14 @@ async function placeThumbnail(
   const jpg = path.join(outDir, 'thumbnail.jpg');
   const warnings: string[] = [];
   // The source must exist before the current thumbnail is touched.
-  if (!(await exists(source))) await render(projectDir, p, spec, source);
+  if (!(await exists(source))) await render(projectDir, p, spec, source, signal);
   await fs.rm(png, {force: true});
   await fs.rm(jpg, {force: true});
   await fs.copyFile(source, png);
   let file = 'out/thumbnail.png';
   if ((await sizeOf(png)) > MAX_THUMBNAIL_BYTES) {
     await fs.rm(png, {force: true});
-    await render(projectDir, p, spec, jpg);
+    await render(projectDir, p, spec, jpg, signal);
     file = 'out/thumbnail.jpg';
     warnings.push(JPEG_WARNING);
     if ((await sizeOf(jpg)) > MAX_THUMBNAIL_BYTES) warnings.push(JPEG_STILL_BIG_WARNING);
@@ -59,9 +60,9 @@ export async function applyThumbnailChoice(
   projectDir: string,
   p: Project,
   index: number,
-  deps: {renderThumbnail?: RenderThumbnail} = {},
+  deps: {renderThumbnail?: RenderThumbnail; signal?: AbortSignal} = {},
 ): Promise<Project> {
-  const {file, warnings} = await placeThumbnail(projectDir, p, index, deps.renderThumbnail ?? defaultRenderThumbnail);
+  const {file, warnings} = await placeThumbnail(projectDir, p, index, deps.renderThumbnail ?? defaultRenderThumbnail, deps.signal);
   const mine = [JPEG_WARNING, JPEG_STILL_BIG_WARNING];
   return {
     ...p,
@@ -96,10 +97,10 @@ export function packageStep(deps: {renderThumbnail?: RenderThumbnail} = {}): Ste
     for (let i = 0; i < options.length; i++) {
       ctx.signal?.throwIfAborted();
       const file = path.join(outDir, `thumbnail-${i + 1}.png`);
-      if (!reused || !(await exists(file))) await render(ctx.projectDir, p, options[i]!, file);
+      if (!reused || !(await exists(file))) await render(ctx.projectDir, p, options[i]!, file, ctx.signal);
       ctx.onProgress({step: 'package', ratio: (i + 1) / (options.length + 2)});
     }
-    const placed = await placeThumbnail(ctx.projectDir, {...p, thumbnail: {options, chosen, file: ''}}, chosen, render);
+    const placed = await placeThumbnail(ctx.projectDir, {...p, thumbnail: {options, chosen, file: ''}}, chosen, render, ctx.signal);
     const warnings: string[] = [...placed.warnings];
 
     // 2. YouTube kit: a re-run keeps the titles, hook and hashtags and recomputes the rest.
