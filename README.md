@@ -38,7 +38,7 @@ Put the topic before `--sources`, which takes every following value up to the ne
 
 Options: `--style papier|craie|infographie|nuit` (default `papier`), `--length <minutes>` (default 3), `--language <code>` (default from settings), `--provider`, `--model`, `--sources <url|file>...`, `--voice edge|elevenlabs|openai|none` (default `edge`), `--voice-id <id>`, `--data <dir>`. On failure it prints `FAILED at <step>: <message>` and the `--resume` command, and exits 1. A finished step is never run again on resume. Ctrl+C exits with code 130.
 
-**Voice.** `edge` (default) is free and needs no key, but needs network access to Microsoft's speech service; it picks a default voice for the language (`fr-FR-DeniseNeural`, `en-US-AriaNeural`, ...) unless you give `--voice-id`. `elevenlabs` and `openai` need `ELEVENLABS_API_KEY` or `OPENAI_API_KEY`. `none` makes a silent video (the scene length is estimated from the text). To use your own voice, see "Edit a project" below. If Edge is unreachable for one scene, that scene gets an estimated length and a warning; if it fails for every scene, `make` stops instead of shipping a silent video.
+**Voice.** `edge` (default) is free and needs no key, but needs network access to Microsoft's speech service; it picks a default voice for the language (`fr-FR-DeniseNeural`, `en-US-AriaNeural`, ...) unless you give `--voice-id`. `elevenlabs` and `openai` need `ELEVENLABS_API_KEY` or `OPENAI_API_KEY`; their default voices are Rachel (`21m00Tcm4TlvDq8ikWAM`) and `alloy`, and `--voice-id` overrides them. `none` makes a silent video (the scene length is estimated from the text). To use your own voice, see "Edit a project" below; to change a project's voice afterwards, use `touch ... voice`. If Edge is unreachable for one scene, that scene gets an estimated length and a warning; if it fails for every scene, `make` stops instead of shipping a silent video.
 
 **Settings.** Choose the default provider and web search in `data/config.json` (git-ignored):
 
@@ -54,7 +54,7 @@ Options: `--style papier|craie|infographie|nuit` (default `papier`), `--length <
 
 ## Edit a project
 
-`touch` changes a finished project. Scene ids are `s01`, `s02`, ... (see `project.json`). Each command prints one `OK` line; errors exit 1 and Ctrl+C exits 130.
+`touch` changes a finished project. In Docker (the reference way, and the one to use on Windows for anything that renders), run `docker compose --profile dev run --rm dev touch -- "data/projects/<folder>" rerender`; the examples below use the shorter native form. Scene ids are `s01`, `s02`, ... (see `project.json`). Each command prints one `OK` line; errors exit 1 and Ctrl+C exits 130.
 
 ```bash
 npm run touch -- "data/projects/<folder>" regenerate s03              # ask the LLM for a new version of scene s03
@@ -62,10 +62,11 @@ npm run touch -- "data/projects/<folder>" edit s02 "New narration."   # change t
 npm run touch -- "data/projects/<folder>" rerender                    # re-voice changed scenes, render, rebuild thumbnail and YouTube kit
 npm run touch -- "data/projects/<folder>" thumbnail 2                 # use thumbnail option 2 (1 to 3)
 npm run touch -- "data/projects/<folder>" refresh-youtube             # forget the YouTube copy and thumbnail options
+npm run touch -- "data/projects/<folder>" voice openai --voice-id alloy  # change the engine and voice (edge, elevenlabs, openai, none); then rerender
 npm run touch -- "data/projects/<folder>" refresh-youtube --youtube   # only the titles, description and hashtags (or --thumbnails)
 ```
 
-`regenerate`, `edit` and `thumbnail` do not render: run `rerender` afterwards. `refresh-youtube` clears the saved copy; the next `rerender` regenerates it. Do not run `touch` and `make` on the same project at the same time: there is no project lock yet.
+`regenerate`, `edit` and `thumbnail` do not render: run `rerender` afterwards. `refresh-youtube` clears the saved copy; the next `rerender` regenerates it. `touch` reads the settings from the project's data folder (`<data>/projects/<name>`); pass `--data <dir>` if the project lives elsewhere. Put `--` before an argument that starts with `--` (`edit s02 -- "--5 % de dette"`). Do not run `touch` and `make` on the same project at the same time: there is no project lock yet.
 
 **Record your own voice.**
 
@@ -75,7 +76,7 @@ npm run touch -- "data/projects/<folder>" recording my-voice.m4a      # splits t
 npm run touch -- "data/projects/<folder>" rerender
 ```
 
-Read `out/recording-script.txt` aloud and leave a 2 second pause at each `<break time="2.0s" />` line (do not read the markers). Then give the file to `recording` (mp3, wav, m4a or webm) and run `rerender`. The pauses are detected automatically; the recording must contain exactly one pause fewer than there are scenes. If the count is wrong, nothing is changed and the command prints how many pauses it found, where they are, and a suggested `--cuts`. You can then pass the cut times yourself with `--cuts 12.4,31,58.2` (seconds, one per boundary), or tune detection with `--noise <dB>` (default `-38`; use a lower value such as `-45` for a quiet room or a low voice) and `--min-silence <s>` (default `1.2`). If you edit a narration after recording, record again or switch voices.
+Read `out/recording-script.txt` aloud and leave a 2 second pause at each `<break time="2.0s" />` line (do not read the markers). In Docker, the recording must be inside the mounted repo folder (for example under `data/`). Then give the file to `recording` (mp3, wav, m4a or webm) and run `rerender`. The pauses are detected automatically; the recording must contain exactly one pause fewer than there are scenes. If the count is wrong, nothing is changed and the command prints how many pauses it found, where they are, and a hint. When there are too many pauses (a pause inside a sentence), it also prints a suggested `--cuts` made of the longest pauses; with too few, it cannot guess, so pass the cut times yourself with `--cuts 12.4,31,58.2` (seconds, one per boundary). Detection can be tuned with `--noise <dB>` (default `-38`, must be negative) and `--min-silence <s>` (default `1.2`). A noisy room, where no pause is found, needs a higher value such as `--noise -30`; a very quiet room or a soft voice, where the file counts as silent or sentences are cut, needs a lower one such as `--noise -45`. If you edit a narration after recording, record again or switch voices with `touch ... voice`.
 
 ## Tests
 

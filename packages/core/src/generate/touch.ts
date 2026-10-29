@@ -82,7 +82,7 @@ export async function chooseThumbnail(
   deps: {renderThumbnail?: RenderThumbnail} = {},
 ): Promise<Project> {
   const p = await loadProject(projectDir);
-  if (!p.thumbnail) throw new Error('No thumbnail yet. Run the package step first');
+  if (!p.thumbnail) throw new Error('No thumbnail yet. Run "rerender" first');
   if (!Number.isInteger(index) || index < 0 || index >= p.thumbnail.options.length) {
     throw new Error(`Thumbnail ${index + 1} does not exist (choose 1..${p.thumbnail.options.length})`);
   }
@@ -105,6 +105,23 @@ export async function refreshYoutube(
     {...rest, ...(yt && !youtube ? {youtube: yt} : {}), ...(thumbnail && !thumbnails ? {thumbnail} : {})},
     'package',
   );
+  await saveProject(projectDir, p);
+  return p;
+}
+
+/** Changes the voice engine (and voice id) of a project; the next `rerender` or `make --resume` re-voices every scene. */
+export async function setVoice(
+  projectDir: string,
+  voice: {engine: 'edge' | 'elevenlabs' | 'openai' | 'none'; voiceId?: string},
+): Promise<Project> {
+  if (!['edge', 'elevenlabs', 'openai', 'none'].includes(voice.engine)) {
+    throw new Error(`Voice engine "${voice.engine}" cannot be set here: use the recording command to upload your own voice`);
+  }
+  const voiceId = voice.voiceId?.trim();
+  if (voice.voiceId !== undefined && !voiceId) throw new Error('The voice id is empty: give a voice id or leave it out');
+  if (voice.engine === 'none' && voiceId) throw new Error('A voice id needs a voice engine, not "none"');
+  const p0 = await loadProject(projectDir);
+  const p = without({...p0, voice: voiceId ? {engine: voice.engine, voiceId} : {engine: voice.engine}}, 'voice', 'render', 'package');
   await saveProject(projectDir, p);
   return p;
 }

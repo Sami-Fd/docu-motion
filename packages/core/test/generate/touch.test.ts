@@ -4,7 +4,7 @@ import {promises as fs} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type {Step, StepContext} from '../../src/generate/context.js';
-import {chooseThumbnail, editNarration, refreshYoutube, regenerateScene, rerender} from '../../src/generate/touch.js';
+import {chooseThumbnail, editNarration, refreshYoutube, regenerateScene, rerender, setVoice} from '../../src/generate/touch.js';
 import {audioHash, voiceStep, STALE_RECORDING_WARNING} from '../../src/generate/steps/voice.js';
 import {createFakeProvider} from '../../src/llm/fake.js';
 import {STEP_NAMES, type Project} from '../../src/project/schema.js';
@@ -129,7 +129,7 @@ describe('chooseThumbnail', () => {
     await expect(chooseThumbnail(dir, 8)).rejects.toThrow('Thumbnail 9 does not exist (choose 1..3)');
     await expect(chooseThumbnail(dir, -1)).rejects.toThrow('Thumbnail 0 does not exist (choose 1..3)');
     await save(project());
-    await expect(chooseThumbnail(dir, 0)).rejects.toThrow('Run the package step first');
+    await expect(chooseThumbnail(dir, 0)).rejects.toThrow('Run "rerender" first');
   });
 });
 
@@ -196,5 +196,24 @@ describe('editNarration then rerender with the real voice step', () => {
     expect(p.scenes[1]).toMatchObject({dirty: true});
     expect(p.scenes[1]!.warnings).toContain(STALE_RECORDING_WARNING);
     expect(p.scenes[0]!.warnings).not.toContain(STALE_RECORDING_WARNING);
+  });
+});
+
+describe('setVoice', () => {
+  it('sets the engine and voice id and clears voice, render, package', async () => {
+    await save(project({voice: {engine: 'upload'}}));
+    const p = await setVoice(dir, {engine: 'openai', voiceId: 'alloy'});
+    expect(p.voice).toEqual({engine: 'openai', voiceId: 'alloy'});
+    expect(p.progress.done).toEqual(['sources', 'facts', 'script', 'scenes', 'layout']);
+    expect((await loadProject(dir)).voice.engine).toBe('openai');
+  });
+  it('drops a previous voice id when none is given, and accepts none', async () => {
+    await save(project({voice: {engine: 'edge', voiceId: 'x'}}));
+    expect((await setVoice(dir, {engine: 'none'})).voice).toEqual({engine: 'none'});
+  });
+  it('rejects an empty voice id and the upload engine', async () => {
+    await save(project());
+    await expect(setVoice(dir, {engine: 'edge', voiceId: ' '})).rejects.toThrow(/voice id/i);
+    await expect(setVoice(dir, {engine: 'upload' as never})).rejects.toThrow(/recording/);
   });
 });

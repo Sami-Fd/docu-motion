@@ -76,10 +76,11 @@ export async function applyRecording(
   await assertHasAudio(file, signal);
   signal?.throwIfAborted();
 
+  const used = opts.noiseDb ?? -38;
   const det = await detectSilences(file, {noiseDb: opts.noiseDb, minSeconds: opts.minSilence, signal});
   const {silences, duration, soundStart, soundEnd} = det;
   if (soundEnd <= soundStart) throw new Error(
-      `${file} is silent or quieter than ${opts.noiseDb ?? -38} dB — try a lower noise threshold (noiseDb, e.g. ${Math.min(-45, (opts.noiseDb ?? -38) - 7)})`,
+      `${file} is silent or quieter than ${opts.noiseDb ?? -38} dB — try a lower noise threshold (e.g. ${Math.min(-45, (opts.noiseDb ?? -38) - 7)})`,
     );
   let segments: [number, number][];
   if (opts.cuts) {
@@ -106,7 +107,7 @@ export async function applyRecording(
       silences,
       suggested,
       ...(found === 0
-        ? {hint: 'No pause found: background noise may be louder than -38 dB, or the recording has no 2 s pauses between scenes'}
+        ? {hint: `No pause found at ${used} dB: background noise may be louder than that (try a higher noise threshold, e.g. ${Math.min(-10, used + 8)}), or the recording has no 2 s pauses between scenes`}
         : {}),
     };
   }

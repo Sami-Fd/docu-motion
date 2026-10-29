@@ -27,6 +27,27 @@ const run = (script: string, args: string[], env: Record<string, string> = {}): 
     child.on('close', (code) => resolve({code, stdout, stderr}));
   });
 
+/** `count` 1.5 s tones separated by 2 s of digital silence. */
+async function makeTones(file: string, count: number): Promise<void> {
+  const inputs: string[] = [];
+  const labels: string[] = [];
+  for (let i = 0; i < count; i++) {
+    if (i > 0) inputs.push('-f', 'lavfi', '-t', '2', '-i', 'anullsrc=r=44100:cl=mono');
+    inputs.push('-f', 'lavfi', '-i', 'sine=frequency=440:duration=1.5:sample_rate=44100');
+  }
+  const total = 2 * count - 1;
+  for (let i = 0; i < total; i++) labels.push(`[${i}:a]aformat=channel_layouts=mono[a${i}]`);
+  await runRemotionTool('ffmpeg', [
+    '-y',
+    ...inputs,
+    '-filter_complex',
+    `${labels.join(';')};${labels.map((_, i) => `[a${i}]`).join('')}concat=n=${total}:v=0:a=1[out]`,
+    '-map',
+    '[out]',
+    file,
+  ]);
+}
+
 let data: string;
 let dir: string;
 let mp4: string;
@@ -58,8 +79,10 @@ describe('make with the default voice, then touch', () => {
 
   it('edit then rerender re-voices only that scene', async () => {
     const before = await probeMedia(mp4);
-    const s01 = await mtime('voice/s01.mp3');
-    const s02 = await mtime('voice/s02.mp3');
+    const p0 = await loadProject(dir);
+    const mp3s = (await fs.readdir(path.join(dir, 'voice'))).filter((f) => f.endsWith('.mp3'));
+    expect(mp3s).toHaveLength(p0.scenes.length);
+    const mt0 = Object.fromEntries(await Promise.all(mp3s.map(async (f) => [f, await mtime(`voice/${f}`)] as const)));
     await new Promise((r) => setTimeout(r, 1100));
     const words = Array.from({length: 35}, (_, i) => `mot${i}`).join(' ');
     const e = await touch('edit', 's02', words);
@@ -68,10 +91,16 @@ describe('make with the default voice, then touch', () => {
     const r = await touch('rerender');
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toMatch(/OK .+video\.mp4/);
-    expect(await mtime('voice/s01.mp3')).toBe(s01);
-    expect(await mtime('voice/s02.mp3')).toBeGreaterThan(s02);
+    for (const f of mp3s) {
+      const now = await mtime(`voice/${f}`);
+      if (f === 's02.mp3') expect(now).toBeGreaterThan(mt0[f]!);
+      else expect(now, f).toBe(mt0[f]);
+    }
+    const p1 = await loadProject(dir);
+    expect(p1.scenes[1]!.audio!.seconds).toBeCloseTo(35 / 2.5, 0);
+    const delta = (p1.scenes[1]!.durationFrames - p0.scenes[1]!.durationFrames) / 30;
     const after = await probeMedia(mp4);
-    expect(after.durationSeconds).not.toBeCloseTo(before.durationSeconds, 1);
+    expect(Math.abs(after.durationSeconds - before.durationSeconds - delta)).toBeLessThanOrEqual(0.1);
   }, 900_000);
 
   it('records, splits and re-renders an uploaded voice', async () => {
@@ -82,23 +111,7 @@ describe('make with the default voice, then touch', () => {
     expect(await fs.readFile(path.join(dir, 'out', 'recording-script.txt'), 'utf8')).toContain('<break time="2.0s" />');
 
     const wav = path.join(data, 'rec.wav');
-    const inputs: string[] = [];
-    const labels: string[] = [];
-    for (let i = 0; i < n; i++) {
-      if (i > 0) inputs.push('-f', 'lavfi', '-t', '2', '-i', 'anullsrc=r=44100:cl=mono');
-      inputs.push('-f', 'lavfi', '-i', 'sine=frequency=440:duration=1.5:sample_rate=44100');
-    }
-    const total = 2 * n - 1;
-    for (let i = 0; i < total; i++) labels.push(`[${i}:a]aformat=channel_layouts=mono[a${i}]`);
-    await runRemotionTool('ffmpeg', [
-      '-y',
-      ...inputs,
-      '-filter_complex',
-      `${labels.join(';')};${labels.map((_, i) => `[a${i}]`).join('')}concat=n=${total}:v=0:a=1[out]`,
-      '-map',
-      '[out]',
-      wav,
-    ]);
+    await makeTones(wav, n);
     const rec = await touch('recording', wav);
     expect(rec.code, rec.stderr).toBe(0);
     expect(rec.stdout).toContain('OK');
@@ -124,6 +137,23 @@ describe('make with the default voice, then touch', () => {
     expect(r.stderr).toContain('Pass --cuts with');
   }, 120_000);
 
+  it('suggests --cuts when there is one pause too many', async () => {
+    const n = (await loadProject(dir)).scenes.length;
+    const wav = path.join(data, 'many.wav');
+    await makeTones(wav, n + 1);
+    const r = await touch('recording', wav);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain(`Found ${n} pauses, need ${n - 1}.`);
+    const m = /^Try: --cuts (.+)$/m.exec(r.stderr);
+    expect(m?.[1]?.split(',')).toHaveLength(n - 1);
+  }, 120_000);
+
+  it('rejects a thumbnail that does not exist', async () => {
+    const r = await touch('thumbnail', '9');
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Thumbnail 9 does not exist (choose 1..3)');
+  }, 120_000);
+
   it('refresh-youtube clears the copy', async () => {
     const r = await touch('refresh-youtube', '--thumbnails');
     expect(r.code, r.stderr).toBe(0);
@@ -133,18 +163,45 @@ describe('make with the default voice, then touch', () => {
     expect(p.youtube?.hook).toBeTruthy();
   }, 120_000);
 
-  it('rejects a thumbnail that does not exist', async () => {
-    const r = await touch('thumbnail', '9');
-    expect(r.code).toBe(1);
-    expect(r.stderr).toMatch(/Thumbnail 9|No thumbnail/);
-  }, 120_000);
-
   it('prints usage for an unknown command or missing arguments', async () => {
     for (const args of [['frobnicate'], ['edit', 's01'], ['regenerate'], []]) {
       const r = await touch(...args);
       expect(r.code, args.join(' ')).toBe(1);
       expect(r.stderr).toContain('Usage: npm run touch');
     }
+  }, 120_000);
+
+  it('validates recording options', async () => {
+    const wav = path.join(data, 'one.wav');
+    const a = await touch('recording', wav, '--noise', '38');
+    expect(a.code).toBe(1);
+    expect(a.stderr).toContain('negative');
+    const b = await touch('recording', wav, '--min-silence', '0');
+    expect(b.code).toBe(1);
+    expect(b.stderr).toContain('--min-silence');
+  }, 120_000);
+
+  it('sets the voice, accepts -- before text starting with --, and lowercases scene ids', async () => {
+    const e = await touch('edit', 'S01', '--', '--5 % de dette');
+    expect(e.code, e.stderr).toBe(0);
+    expect((await loadProject(dir)).scenes[0]!.narration).toBe('--5 % de dette');
+    const bad = await touch('voice', 'edge', '--voice-id', '');
+    expect(bad.code).toBe(1);
+    expect(bad.stderr).toContain('--voice-id is empty');
+    const unknown = await touch('voice', 'robot');
+    expect(unknown.code).toBe(1);
+    const v = await touch('voice', 'edge', '--voice-id', 'fr-FR-HenriNeural');
+    expect(v.code, v.stderr).toBe(0);
+    expect(v.stdout).toContain('rerender');
+    const p = await loadProject(dir);
+    expect(p.voice).toEqual({engine: 'edge', voiceId: 'fr-FR-HenriNeural'});
+    expect(p.progress.done).not.toContain('voice');
+  }, 120_000);
+
+  it('names the path that was tried when the project folder is wrong', async () => {
+    const r = await run('touch', [path.join(data, 'nope'), 'rerender']);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain(path.join(data, 'nope'));
   }, 120_000);
 
   it('rejects an unknown scene id', async () => {

@@ -150,6 +150,8 @@ describe('applyRecording', () => {
     const r0 = await applyRecording(dir3, two, {minSilence: 5});
     expect(r0).toMatchObject({ok: false, found: 0, needed: 2, suggested: []});
     if (!r0.ok) expect(r0.hint).toMatch(/-38 dB|noise/i);
+    const r1 = await applyRecording(dir3, two, {minSilence: 5, noiseDb: -30});
+    if (!r1.ok) expect(r1.hint).toMatch(/at -30 dB/);
   }, 60_000);
 
   it('cleans leftovers of an earlier crash', async () => {
@@ -201,7 +203,7 @@ describe('applyRecording', () => {
     const quiet = path.join(root, 'quiet.wav');
     await makeRecording(quiet, [2, 3, 2], {volume: 0.1});
     const dir = await project('quiet', 3);
-    await expect(applyRecording(dir, quiet)).rejects.toThrow(/silent or quieter than -38 dB.*noiseDb/);
+    await expect(applyRecording(dir, quiet)).rejects.toThrow(/silent or quieter than -38 dB.*lower noise threshold \(e\.g\. -45\)/);
     expect((await applyRecording(dir, quiet, {noiseDb: -50})).ok).toBe(true);
   }, 60_000);
 

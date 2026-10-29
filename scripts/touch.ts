@@ -6,6 +6,9 @@
 //   npm run touch -- <projectDir> recording <file> [--cuts t1,t2,...] [--noise <dB>] [--min-silence <s>]
 //   npm run touch -- <projectDir> thumbnail <1|2|3>
 //   npm run touch -- <projectDir> refresh-youtube [--youtube] [--thumbnails]
+//   npm run touch -- <projectDir> voice <edge|elevenlabs|openai|none> [--voice-id <id>]
+// Any command also takes --data <dir> (default: the folder above <dir>/../ when it is <data>/projects/<name>). Put -- before
+// arguments that start with -- (edit s02 -- "--5 % de dette").
 // Errors exit 1 (usage errors too, like make); Ctrl+C exits 130. Test hook DOCU_MOTION_FAKE_TTS=1: see scripts/cli-common.ts.
 // Do not run touch and make on the same project at the same time: there is no project lock yet.
 import {existsSync} from 'node:fs';
@@ -19,6 +22,7 @@ import {
   applyRecording,
   chooseThumbnail,
   createProvider,
+  createTtsEngine,
   defaultDataDir,
   editNarration,
   formatWarningSummary,
@@ -28,10 +32,11 @@ import {
   refreshYoutube,
   regenerateScene,
   rerender,
+  setVoice,
   type StepContext,
   type StepName,
 } from '../packages/core/src/index.js';
-import {fakeTtsSteps, reportPaths, usage} from './cli-common.js';
+import {fakeTtsEnabled, reportPaths, runCli, testTtsSteps, usage, voiceFailureHint} from './cli-common.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const USAGE = [
@@ -43,7 +48,12 @@ const USAGE = [
   '  recording <file> [--cuts t1,t2,...] [--noise <dB>] [--min-silence <s>]',
   '  thumbnail <1|2|3>',
   '  refresh-youtube [--youtube] [--thumbnails]',
+  '  voice <edge|elevenlabs|openai|none> [--voice-id <id>]',
+  'Any command also takes --data <dir>; put -- before arguments that start with --.',
 ].join('\n');
+
+/** Core words the threshold generically; the CLI names its option. */
+const flagNames = (m: string) => m.replace(/noise threshold/g, '--noise threshold');
 
 const RERUN = 'run "rerender" to update the video';
 
@@ -52,9 +62,14 @@ function parse(argv: string[], valued: string[], flags: string[] = []): {pos: st
   const pos: string[] = [];
   const opt: Record<string, string> = {};
   const flag = new Set<string>();
+  let literal = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (!a.startsWith('--')) {
+    if (!literal && a === '--') {
+      literal = true;
+      continue;
+    }
+    if (literal || !a.startsWith('--')) {
       pos.push(a);
       continue;
     }
@@ -76,20 +91,52 @@ const num = (name: string, v: string): number => {
   return n;
 };
 
+/** Takes `--data <dir>` out of the arguments (before a `--` terminator). */
+function takeData(argv: string[]): {rest: string[]; data?: string} {
+  const rest: string[] = [];
+  let data: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--') {
+      rest.push(...argv.slice(i));
+      break;
+    }
+    if (a === '--data') {
+      data = argv[++i];
+      if (!data) usage('--data needs a folder');
+    } else if (a.startsWith('--data=')) data = a.slice(7);
+    else rest.push(a);
+  }
+  return {rest, data};
+}
+
+/** Settings live in the data folder the project was made in: <data>/projects/<name>, unless --data says otherwise. */
+const dataDirFor = (projectDir: string, explicit?: string): string =>
+  explicit
+    ? path.resolve(explicit)
+    : path.basename(path.dirname(projectDir)) === 'projects'
+      ? path.dirname(path.dirname(projectDir))
+      : path.resolve(defaultDataDir());
+
 async function main(): Promise<number> {
   const envFile = path.join(REPO, '.env');
   if (existsSync(envFile)) process.loadEnvFile(envFile);
 
-  const [dirArg, command, ...rest] = process.argv.slice(2);
+  const [dirArg, command, ...tail] = process.argv.slice(2);
   if (!dirArg || !command) usage(USAGE);
   const projectDir = path.resolve(dirArg!);
+  const {rest, data} = takeData(tail);
+  const dataDir = dataDirFor(projectDir, data);
+  if (!existsSync(path.join(projectDir, 'project.json'))) {
+    usage(`No project.json found in ${projectDir} (the project folder comes first: touch <projectDir> <command>)`);
+  }
 
   const controller = new AbortController();
   // once: a second Ctrl+C gets Node's default handler and force-quits.
   process.once('SIGINT', () => controller.abort());
 
   const context = async (): Promise<Omit<StepContext, 'projectDir'>> => {
-    const settings = await loadSettings(path.resolve(defaultDataDir()), process.env);
+    const settings = await loadSettings(dataDir, process.env);
     const p = await loadProject(projectDir);
     let lastStep: StepName | undefined;
     return {
@@ -111,14 +158,14 @@ async function main(): Promise<number> {
     case 'regenerate': {
       const {pos} = parse(rest, []);
       if (pos.length !== 1) usage(USAGE);
-      await regenerateScene(projectDir, pos[0]!, await context());
+      await regenerateScene(projectDir, pos[0]!.toLowerCase(), await context());
       console.log(`OK ${pos[0]} regenerated - ${RERUN}`);
       return 0;
     }
     case 'edit': {
       const {pos} = parse(rest, []);
       if (pos.length !== 2) usage(USAGE);
-      await editNarration(projectDir, pos[0]!, pos[1]!);
+      await editNarration(projectDir, pos[0]!.toLowerCase(), pos[1]!);
       console.log(`OK ${pos[0]} narration updated - ${RERUN}`);
       return 0;
     }
@@ -127,10 +174,11 @@ async function main(): Promise<number> {
       if (pos.length !== 0) usage(USAGE);
       let done;
       try {
-        done = await rerender(projectDir, await context(), {steps: fakeTtsSteps()});
+        done = await rerender(projectDir, await context(), {steps: testTtsSteps()});
       } catch (e) {
         if (e instanceof StepFailedError) {
           console.error(`FAILED at ${e.step}: ${e.message}`);
+          if (e.step === 'voice') console.error(voiceFailureHint(projectDir));
           console.error('Run "rerender" again to continue');
           return 1;
         }
@@ -152,19 +200,18 @@ async function main(): Promise<number> {
     case 'recording': {
       const {pos, opt} = parse(rest, ['cuts', 'noise', 'min-silence']);
       if (pos.length !== 1) usage(USAGE);
+      const noiseDb = opt.noise === undefined ? undefined : num('noise', opt.noise);
+      if (noiseDb !== undefined && noiseDb >= 0) usage(`Invalid --noise "${opt.noise}": expected a negative number of dB, such as -38`);
+      const minSilence = opt['min-silence'] === undefined ? undefined : num('min-silence', opt['min-silence']);
+      if (minSilence !== undefined && minSilence <= 0) usage(`Invalid --min-silence "${opt['min-silence']}": expected a number of seconds above 0`);
       const cuts = opt.cuts === undefined ? undefined : opt.cuts.split(',').map((t) => num('cuts', t));
-      const r = await applyRecording(projectDir, path.resolve(pos[0]!), {
-        cuts,
-        noiseDb: opt.noise === undefined ? undefined : num('noise', opt.noise),
-        minSilence: opt['min-silence'] === undefined ? undefined : num('min-silence', opt['min-silence']),
-        signal: controller.signal,
-      });
+      const r = await applyRecording(projectDir, path.resolve(pos[0]!), {cuts, noiseDb, minSilence, signal: controller.signal});
       if (!r.ok) {
         const list = r.silences.map((s) => `${s.start.toFixed(1)}–${s.end.toFixed(1)} s`).join(', ') || 'none';
         console.error(`Found ${r.found} pauses, need ${r.needed}. Detected silences: ${list}`);
         console.error(`Pass --cuts with ${r.needed} times to override`);
         if (r.suggested.length > 0) console.error(`Try: --cuts ${r.suggested.map((t) => t.toFixed(2)).join(',')}`);
-        if (r.hint) console.error(r.hint);
+        if (r.hint) console.error(flagNames(r.hint));
         return 1;
       }
       console.log(`OK recording split into ${r.project.scenes.length} scenes - ${RERUN}`);
@@ -187,27 +234,34 @@ async function main(): Promise<number> {
       console.log('OK YouTube copy cleared - the next "rerender" regenerates it');
       return 0;
     }
+    case 'voice': {
+      const {pos, opt} = parse(rest, ['voice-id']);
+      if (pos.length !== 1) usage(USAGE);
+      const engine = pos[0] as 'edge' | 'elevenlabs' | 'openai' | 'none';
+      if (!['edge', 'elevenlabs', 'openai', 'none'].includes(engine)) usage(`Unknown voice engine "${pos[0]}". Expected one of: edge, elevenlabs, openai, none`);
+      if (opt['voice-id'] !== undefined && opt['voice-id'].trim() === '') usage('--voice-id is empty: give a voice id or leave the option out');
+      // Same early key check as make: a missing key must fail now, not at the voice step.
+      if ((engine === 'elevenlabs' || engine === 'openai') && !fakeTtsEnabled()) {
+        createTtsEngine(engine, await loadSettings(dataDir, process.env));
+      }
+      await setVoice(projectDir, {engine, voiceId: opt['voice-id']});
+      console.log(`OK voice set to ${engine}${opt['voice-id'] ? ` (${opt['voice-id']})` : ''} - ${RERUN}`);
+      return 0;
+    }
     default:
       return usage(`Unknown command "${command}"\n${USAGE}`);
   }
 }
 
-main().then(
-  (code) => process.exit(code),
-  (e) => {
-    if (e instanceof GenerateCancelled || (e instanceof Error && e.name === 'AbortError')) {
-      console.error('Cancelled');
-      process.exit(130);
-    }
-    if (e instanceof ProjectLoadError) {
-      console.error(`${e.issues.map((i) => `${i.path || '(root)'}: ${i.message}`).join('\n')}\n${e.file}`);
-      process.exit(1);
-    }
-    if ((e as NodeJS.ErrnoException)?.code === 'ENOENT' && String((e as Error).message).includes('project.json')) {
-      console.error(`No project.json found in the given project directory`);
-      process.exit(1);
-    }
-    console.error(e instanceof Error ? e.message : String(e));
-    process.exit(1);
-  },
-);
+runCli(main, (e) => {
+  if (e instanceof GenerateCancelled || (e instanceof Error && e.name === 'AbortError')) {
+    console.error('Cancelled');
+    return 130;
+  }
+  if (e instanceof ProjectLoadError) {
+    console.error(`${e.issues.map((i) => `${i.path || '(root)'}: ${i.message}`).join('\n')}\n${e.file}`);
+    return 1;
+  }
+  console.error(e instanceof Error ? flagNames(e.message) : String(e));
+  return 1;
+});

@@ -19,17 +19,26 @@ export type RawProvider = {
 };
 
 export type MakeProviderOpts = {
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Secrets to scrub from the messages of rethrown errors. */
   secrets?: string[];
 };
 
 const VALIDATION_RETRIES = 3;
 const TRANSIENT_BACKOFF_MS = [1000, 4000];
-const defaultSleep = (ms: number) =>
-  new Promise<void>((r) => {
-    // unref: a pending backoff (e.g. after an abort) must not keep the process alive
-    setTimeout(r, ms).unref();
+/**
+ * The backoff timer keeps the event loop alive: an unref'd one let the process exit silently (code 0) in the middle of a
+ * retry when nothing else was pending (e.g. offline TTS). On abort the timer is cleared so Ctrl+C is not delayed.
+ */
+export const defaultSleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, {once: true});
   });
 
 const abortError = () => {
@@ -38,13 +47,13 @@ const abortError = () => {
   return err;
 };
 
-const abortableSleep = (sleep: (ms: number) => Promise<void>, ms: number, signal?: AbortSignal): Promise<void> => {
+const abortableSleep = (sleep: (ms: number, signal?: AbortSignal) => Promise<void>, ms: number, signal?: AbortSignal): Promise<void> => {
   if (!signal) return sleep(ms);
   if (signal.aborted) return Promise.reject(abortError());
   return new Promise<void>((resolve, reject) => {
     const onAbort = () => reject(abortError());
     signal.addEventListener('abort', onAbort, {once: true});
-    sleep(ms).then(
+    sleep(ms, signal).then(
       () => {
         signal.removeEventListener('abort', onAbort);
         resolve();
@@ -60,7 +69,7 @@ const abortableSleep = (sleep: (ms: number) => Promise<void>, ms: number, signal
 /** Retries `fn` on transient ProviderErrors with backoff 1 s then 4 s; other errors (passed through `scrub`) are thrown at once. */
 export async function withTransientRetry<T>(
   fn: () => Promise<T>,
-  opts: {sleep?: (ms: number) => Promise<void>; signal?: AbortSignal; scrub?: (e: unknown) => unknown} = {},
+  opts: {sleep?: (ms: number, signal?: AbortSignal) => Promise<void>; signal?: AbortSignal; scrub?: (e: unknown) => unknown} = {},
 ): Promise<T> {
   const sleep = opts.sleep ?? defaultSleep;
   const {signal} = opts;

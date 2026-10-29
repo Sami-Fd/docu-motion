@@ -6,7 +6,7 @@ import type {TtsEngine} from './engines.js';
 
 /**
  * Test-only engine: a 440 Hz tone lasting words / 2.5 seconds, as MP3, rendered by ffmpeg's lavfi source.
- * No network. Core never reads an env var for it: scripts/make.ts injects it (see DOCU_MOTION_FAKE_TTS there).
+ * No network. Core never reads an env var for it: scripts/cli-common.ts injects it (see fakeTtsEnabled there).
  */
 export function createFakeTtsEngine(): TtsEngine {
   return {
